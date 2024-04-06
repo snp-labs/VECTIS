@@ -750,76 +750,6 @@ impl Permutation {
 
         DensePolynomial::<F>::from_coefficients_vec(domain.ifft(&z))
     }
-
-    pub(crate) fn compute_lookup_permutation_poly<F: FftField>(
-        &self,
-        domain: &GeneralEvaluationDomain<F>,
-        f: &[F],
-        t: &[F],
-        h_1: &[F],
-        h_2: &[F],
-        delta: F,
-        epsilon: F,
-    ) -> DensePolynomial<F> {
-        let n = domain.size();
-
-        assert_eq!(f.len(), n);
-        assert_eq!(t.len(), n);
-        assert_eq!(h_1.len(), n);
-        assert_eq!(h_2.len(), n);
-
-        let t_next: Vec<F> = [&t[1..], &[t[0]]].concat();
-        let h_1_next: Vec<F> = [&h_1[1..], &[h_1[0]]].concat();
-
-        let product_arguments: Vec<F> = f
-            .iter()
-            .zip(t)
-            .zip(t_next)
-            .zip(h_1)
-            .zip(h_1_next)
-            .zip(h_2)
-            // Derive the numerator and denominator for each gate plonkup
-            // gate and pair the results
-            .map(|(((((f, t), t_next), h_1), h_1_next), h_2)| {
-                Self::lookup_ratio(
-                    delta, epsilon, *f, *t, t_next, *h_1, h_1_next, *h_2,
-                )
-            })
-            .collect();
-
-        let mut state = F::one();
-        let mut p = Vec::with_capacity(n + 1);
-        p.push(state);
-        for s in product_arguments {
-            state *= s;
-            p.push(state);
-        }
-        p.pop();
-        assert_eq!(n, p.len());
-
-        DensePolynomial::from_coefficients_vec(domain.ifft(&p))
-    }
-
-    fn lookup_ratio<F: FftField>(
-        delta: F,
-        epsilon: F,
-        f: F,
-        t: F,
-        t_next: F,
-        h_1: F,
-        h_1_next: F,
-        h_2: F,
-    ) -> F {
-        let one_plus_delta = F::one() + delta;
-        let epsilon_one_plus_delta = epsilon * one_plus_delta;
-        one_plus_delta
-            * (epsilon + f)
-            * (epsilon_one_plus_delta + t + (delta * t_next))
-            * ((epsilon_one_plus_delta + h_1 + (h_2 * delta))
-                * (epsilon_one_plus_delta + h_2 + (h_1_next * delta)))
-                .inverse()
-                .unwrap()
-    }
 }
 
 #[cfg(test)]
@@ -855,16 +785,16 @@ mod test {
         let x4 = cs.add_input(F::from(3u64));
 
         // x1 * x4 = x2
-        cs.poly_gate(x1, x4, x2, one, zero, zero, -one, zero, None);
+        cs.poly_gate(x1, x4, x2, one, zero, zero, -one, zero, None, None);
 
         // x1 + x3 = x2
-        cs.poly_gate(x1, x3, x2, zero, one, one, -one, zero, None);
+        cs.poly_gate(x1, x3, x2, zero, one, one, -one, zero, None, None);
 
         // x1 + x2 = 2*x3
-        cs.poly_gate(x1, x2, x3, zero, one, one, -two, zero, None);
+        cs.poly_gate(x1, x2, x3, zero, one, one, -two, zero, None, None);
 
         // x3 * x4 = 2*x2
-        cs.poly_gate(x3, x4, x2, one, zero, zero, -two, zero, None);
+        cs.poly_gate(x3, x4, x2, one, zero, zero, -two, zero, None, None);
 
         let domain =
             GeneralEvaluationDomain::<F>::new(cs.circuit_bound()).unwrap();

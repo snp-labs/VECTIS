@@ -66,6 +66,9 @@ where
     /// Commitment to the permutation polynomial.
     pub(crate) z_comm: PC::Commitment,
 
+    /// Commitment to the Committed witness.
+    pub(crate) cw_comm: PC::Commitment,
+
     /// Commitment to the quotient polynomial.
     pub(crate) t_1_comm: PC::Commitment,
 
@@ -265,6 +268,7 @@ where
             label_commitment!(self.b_comm),
             label_commitment!(self.c_comm),
             label_commitment!(self.d_comm),
+            label_commitment!(self.cw_comm),
         ];
 
         let aw_evals = [
@@ -276,6 +280,7 @@ where
             self.evaluations.wire_evals.b_eval,
             self.evaluations.wire_evals.c_eval,
             self.evaluations.wire_evals.d_eval,
+            self.evaluations.wire_evals.cw_eval
         ];
 
         let saw_challenge: F =

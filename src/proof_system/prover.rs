@@ -21,6 +21,7 @@ use ark_poly::{
     univariate::DensePolynomial, EvaluationDomain, GeneralEvaluationDomain,
     UVPolynomial,
 };
+use ark_std::rand::Rng;
 use core::marker::PhantomData;
 use merlin::Transcript;
 
@@ -105,7 +106,7 @@ where
         &self,
         n: usize,
         t_x: &DensePolynomial<F>,
-    ) -> [DensePolynomial<F>; 8] {
+    ) -> [DensePolynomial<F>; 4] {
         let mut buf = t_x.coeffs.to_vec();
         buf.resize(n << 3, F::zero());
 
@@ -113,11 +114,7 @@ where
             DensePolynomial::from_coefficients_vec(buf[0..n].to_vec()),
             DensePolynomial::from_coefficients_vec(buf[n..2 * n].to_vec()),
             DensePolynomial::from_coefficients_vec(buf[2 * n..3 * n].to_vec()),
-            DensePolynomial::from_coefficients_vec(buf[3 * n..4 * n].to_vec()),
-            DensePolynomial::from_coefficients_vec(buf[4 * n..5 * n].to_vec()),
-            DensePolynomial::from_coefficients_vec(buf[5 * n..6 * n].to_vec()),
-            DensePolynomial::from_coefficients_vec(buf[6 * n..7 * n].to_vec()),
-            DensePolynomial::from_coefficients_vec(buf[7 * n..].to_vec()),
+            DensePolynomial::from_coefficients_vec(buf[3 * n..].to_vec()),
         ]
     }
 
@@ -153,6 +150,37 @@ where
         self.preprocessed_transcript.append_message(label, message);
     }
 
+    /// adds blinding scalars to a witness vector
+    ///
+    /// appends:
+    /// if hiding degree = 1: (b2*X^(n+1) + b1*X^n - b2*X - b1) + witnesses
+    /// if hiding degree = 2: (b3*X^(n+2) + b2*X^(n+1) + b1*X^n - b3*X^2 - b2*X
+    pub fn add_blinder<R>(
+        rng: &mut R,
+        witnesses: &[F],
+        hiding_degree: usize,
+        domain: &GeneralEvaluationDomain<F>,
+    ) -> (DensePolynomial<F>, Vec<F>)
+    where
+        R: Rng,
+    {
+        let mut w_vec_inverse = domain.ifft(witnesses);
+        let mut opening = Vec::new();
+
+        for i in 0..hiding_degree + 1 {
+            let blinding_scalar = F::rand(rng);
+
+            w_vec_inverse[i] = w_vec_inverse[i] - blinding_scalar;
+            w_vec_inverse.push(blinding_scalar);
+            opening.push(blinding_scalar);
+        }
+
+        (
+            DensePolynomial::<F>::from_coefficients_vec(w_vec_inverse),
+            opening,
+        )
+    }
+
     /// Creates a [`Proof]` that demonstrates that a circuit is satisfied.
     /// # Note
     /// If you intend to construct multiple [`Proof`]s with different witnesses,
@@ -180,6 +208,27 @@ where
         // Append Public Inputs to the transcript
         transcript.append(b"pi", self.cs.get_pi());
 
+        // Committed witness
+        // n개에 대한 committed witness를 가져오는 부분
+
+        let cw_scalar = &self.cs.get_cw().as_evals(n); 
+
+        // let (cw_poly, cw_opening) = Self::add_blinder(&mut rand_core::OsRng, cw_scalar, 1, &domain);
+
+        // Committed witness polynomial
+        let cw_poly = 
+            DensePolynomial::from_coefficients_vec(domain.ifft(cw_scalar));
+
+        let cw_polys = [
+            label_polynomial!(cw_poly)
+        ];
+
+        // The commitment to the committed witness
+        let (cw_comm, cw_rand) = 
+            PC::commit(commit_key, cw_polys.iter(), None)
+            .map_err(to_pc_error::<F, PC>)?;
+
+
         // 1. Compute witness Polynomials
         //
         // Convert Variables to scalars padding them to the
@@ -190,6 +239,7 @@ where
         let w_o_scalar = &[&self.to_scalars(&self.cs.w_o)[..], &pad].concat();
         let w_4_scalar = &[&self.to_scalars(&self.cs.w_4)[..], &pad].concat();
 
+    
         // Witnesses are now in evaluation form, convert them to coefficients
         // so that we may commit to them.
         let w_l_poly =
@@ -206,6 +256,7 @@ where
             label_polynomial!(w_r_poly),
             label_polynomial!(w_o_poly),
             label_polynomial!(w_4_poly),
+            label_polynomial!(cw_poly),
         ];
 
         // Commit to witness polynomials.
@@ -331,6 +382,7 @@ where
             &w_r_poly,
             &w_o_poly,
             &w_4_poly,
+            &cw_poly,
             &t_i_polys[0],
             &t_i_polys[1],
             &t_i_polys[2],
@@ -392,11 +444,11 @@ where
 
         let aw_opening = PC::open(
             commit_key,
-            aw_polys.iter().chain(w_polys.iter()),
-            aw_commits.iter().chain(w_commits.iter()),
+            aw_polys.iter().chain(w_polys.iter()).chain(cw_polys.iter()),
+            aw_commits.iter().chain(w_commits.iter()).chain(cw_comm.iter()),
             &z_challenge,
             aw_challenge,
-            aw_rands.iter().chain(w_rands.iter()),
+            aw_rands.iter().chain(w_rands.iter()).chain(cw_rand.iter()),
             None,
         )
         .map_err(to_pc_error::<F, PC>)?;
@@ -431,6 +483,7 @@ where
             c_comm: w_commits[2].commitment().clone(),
             d_comm: w_commits[3].commitment().clone(),
             z_comm: saw_commits[0].commitment().clone(),
+            cw_comm: cw_comm[0].commitment().clone(),
             t_1_comm: t_commits[0].commitment().clone(),
             t_2_comm: t_commits[1].commitment().clone(),
             t_3_comm: t_commits[2].commitment().clone(),

@@ -9,7 +9,6 @@ use crate::{
     label_eval,
     proof_system::{
         ecc::{CAVals, CurveAddition, FBSMVals, FixedBaseScalarMul},
-        proof,
         widget::GateConstraint,
         CustomValues, ProverKey, WitnessValues,
     },
@@ -44,6 +43,9 @@ where
 
     /// Evaluation of the witness polynomial for the fourth wire at `z`.
     pub d_eval: F,
+
+    /// Evaluation of the committed witness polynomial for the fourth wire at `z`.
+    pub cw_eval: F,
 }
 
 /// Subset of the [`ProofEvaluations`]. Evaluations of the sigma and permutation
@@ -169,6 +171,7 @@ pub fn compute<F, P>(
     w_r_poly: &DensePolynomial<F>,
     w_o_poly: &DensePolynomial<F>,
     w_4_poly: &DensePolynomial<F>,
+    cw_poly: &DensePolynomial<F>,
     t_1_poly: &DensePolynomial<F>,
     t_2_poly: &DensePolynomial<F>,
     t_3_poly: &DensePolynomial<F>,
@@ -188,11 +191,14 @@ where
     let b_eval = w_r_poly.evaluate(z_challenge);
     let c_eval = w_o_poly.evaluate(z_challenge);
     let d_eval = w_4_poly.evaluate(z_challenge);
+    let cw_eval = cw_poly.evaluate(z_challenge);
+
     let wire_evals = WireEvaluations {
         a_eval,
         b_eval,
         c_eval,
         d_eval,
+        cw_eval
     };
     // Permutation evaluations
     let left_sigma_eval =

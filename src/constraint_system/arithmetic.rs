@@ -22,6 +22,7 @@ where
     pub(crate) out_selector: F,
     pub(crate) const_selector: F,
     pub(crate) pi: Option<F>,
+    pub(crate) cw: Option<F>,
 }
 
 impl<F> Default for ArithmeticGate<F>
@@ -37,6 +38,7 @@ where
             out_selector: -F::one(),
             const_selector: F::zero(),
             pi: None,
+            cw: None
         }
     }
 }
@@ -86,6 +88,11 @@ where
 
     pub fn pi(&mut self, pi: F) -> &mut Self {
         self.pi = Some(pi);
+        self
+    }
+
+    pub fn cw(&mut self, cw: F) -> &mut Self {
+        self.cw = Some(cw);
         self
     }
 
@@ -139,6 +146,12 @@ where
             });
         };
 
+        if let Some(cw) = gate.cw {
+            self.add_cw(self.n, &cw).unwrap_or_else(|_| {
+                panic!("Could not insert CW {:?} at {}", cw, self.n)
+            });
+        };
+
         let c = gate_witness.2.unwrap_or_else(|| {
             self.add_input(
                 ((gate.mul_selector
@@ -148,7 +161,8 @@ where
                     + gate.add_selectors.1 * self.variables[&gate_witness.1]
                     + gate.const_selector
                     + q4 * self.variables[&w4]
-                    + gate.pi.unwrap_or_default())
+                    + gate.pi.unwrap_or_default()
+                    + gate.cw.unwrap_or_default()) // 수정함
                     * (-gate.out_selector),
             )
         });
@@ -196,6 +210,7 @@ mod test {
                     should_be_three,
                     F::from(3u64),
                     None,
+                    None
                 );
 
                 let should_be_four = composer.arithmetic_gate(|gate| {
@@ -208,6 +223,7 @@ mod test {
                     should_be_four,
                     F::from(4u64),
                     None,
+                    None
                 );
             },
             200,
@@ -252,7 +268,7 @@ mod test {
                     gate.witness(fourteen, twenty, None).mul(F::one())
                 });
 
-                composer.constrain_to_constant(output, F::from(280u64), None);
+                composer.constrain_to_constant(output, F::from(280u64), None, None);
             },
             200,
         );
@@ -276,7 +292,7 @@ mod test {
                         .constant(F::from(2u64))
                 });
 
-                composer.constrain_to_constant(c, F::from(3u64), None);
+                composer.constrain_to_constant(c, F::from(3u64), None, None);
             },
             32,
         );
@@ -316,7 +332,7 @@ mod test {
                         .fan_in_3(F::from(8u64), nine)
                 });
 
-                composer.constrain_to_constant(output, F::from(352u64), None);
+                composer.constrain_to_constant(output, F::from(352u64), None, None);
             },
             200,
         );
@@ -349,7 +365,7 @@ mod test {
                         .constant(q_c)
                 });
 
-                composer.constrain_to_constant(output, F::from(289u64), None);
+                composer.constrain_to_constant(output, F::from(289u64), None,None);
             },
             200,
         );
@@ -382,7 +398,7 @@ mod test {
                         .constant(q_c)
                 });
 
-                composer.constrain_to_constant(output, F::from(289u64), None);
+                composer.constrain_to_constant(output, F::from(289u64), None, None);
             },
             200,
         );
@@ -415,7 +431,7 @@ mod test {
                         .add(F::one(), F::one())
                 });
 
-                composer.constrain_to_constant(output, F::from(117u64), None);
+                composer.constrain_to_constant(output, F::from(117u64), None, None);
             },
             200,
         );

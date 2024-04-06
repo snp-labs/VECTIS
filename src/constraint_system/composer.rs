@@ -14,6 +14,7 @@
 //! It allows us not only to build Add and Mul constraints but also to build
 //! ECC op. gates, Range checks, Logical gates (Bitwise ops) etc.
 
+use crate::proof_system::cw::CommittedWitness;
 use crate::{
     constraint_system::Variable, error::Error, permutation::Permutation,
 };
@@ -73,9 +74,6 @@ where
     pub(crate) q_4: Vec<F>,
     /// Constant wire selector
     pub(crate) q_c: Vec<F>,
-    // Here we introduce 3 new selectors that will be useful for
-    // poseidon hashes.
-    /// Selector for for w_l^5
     
     /// Arithmetic wire selector
     pub(crate) q_arith: Vec<F>,
@@ -89,6 +87,11 @@ where
     /// non-zero ones to it's actual values.
     pub(crate) public_inputs: PublicInputs<F>,
     pub(crate) intended_pi_pos: Vec<usize>,
+
+    /// Sparse representation of the Committed Witness linking the positions of the
+    /// non-zero ones to it's actual values.
+    pub(crate) committed_witness: CommittedWitness<F>,
+    pub(crate) intended_cw_pos: Vec<usize>,
 
     // Witness vectors
     /// Left wire witness vector.
@@ -138,6 +141,12 @@ where
         &self.public_inputs
     }
 
+    /// Returns a reference to the [`CommittedWitness`] stored in the
+    /// [`StandardComposer`].
+    pub fn get_cw(&self) -> &CommittedWitness<F> {
+        &self.committed_witness
+    }
+
     /// Insert data in the PI starting at the given position and stores the
     /// occupied positions as intended for public inputs.
     pub(crate) fn add_pi<T>(
@@ -150,6 +159,21 @@ where
     {
         let n_positions = self.public_inputs.add_input(pos, item)?;
         self.intended_pi_pos.extend(pos..(pos + n_positions));
+        Ok(())
+    }
+
+    /// Insert data in the CW starting at the given position and stores the
+    /// occupied positions as intended for committed witnesses.
+    pub(crate) fn add_cw<T>(
+        &mut self,
+        pos: usize,
+        item: &T,
+    ) -> Result<(), Error>
+    where
+        T: ToConstraintField<F>,
+    {
+        let n_positions = self.committed_witness.add_input(pos, item)?;
+        self.intended_cw_pos.extend(pos..(pos + n_positions));
         Ok(())
     }
 }
@@ -186,7 +210,7 @@ where
     /// description.
     pub fn add_witness_to_circuit_description(&mut self, value: F) -> Variable {
         let var = self.add_input(value);
-        self.constrain_to_constant(var, value, None);
+        self.constrain_to_constant(var, value, None, None);
         var
     }
 
@@ -208,6 +232,8 @@ where
             q_variable_group_add: Vec::with_capacity(expected_size),
             public_inputs: PublicInputs::new(),
             intended_pi_pos: Vec::new(),
+            committed_witness: CommittedWitness::new(),
+            intended_cw_pos: Vec::new(),
             w_l: Vec::with_capacity(expected_size),
             w_r: Vec::with_capacity(expected_size),
             w_o: Vec::with_capacity(expected_size),
@@ -268,6 +294,7 @@ where
         q_o: F,
         q_c: F,
         pi: Option<F>,
+        cw: Option<F>
     ) -> (Variable, Variable, Variable) {
         self.w_l.push(a);
         self.w_r.push(b);
@@ -292,6 +319,12 @@ where
             });
         };
 
+        if let Some(cw) = cw {
+            self.add_cw(self.n, &cw).unwrap_or_else(|_| {
+                panic!("Could not insert CW {:?} at {}", cw, self.n)
+            });
+        };
+
         self.perm
             .add_variables_to_map(a, b, c, self.zero_var, self.n);
         self.n += 1;
@@ -308,6 +341,7 @@ where
         a: Variable,
         constant: F,
         pi: Option<F>,
+        cw: Option<F>
     ) {
         self.poly_gate(
             a,
@@ -319,6 +353,7 @@ where
             F::zero(),
             -constant,
             pi,
+            cw
         );
     }
 
@@ -335,6 +370,7 @@ where
             F::zero(),
             F::zero(),
             None,
+            None
         );
     }
 
@@ -470,6 +506,7 @@ where
             -F::one(),
             F::one(),
             None,
+            None
         );
 
         f_x
@@ -552,12 +589,18 @@ where
             self.w_o.push(rand_var_3);
             self.w_4.push(rand_var_4);
 
+            // let opening_s = F::rand(rng);
+            // self.add_cw(self.n, &opening_s).unwrap_or_else(|_| {
+            //     panic!("Could not insert CW {:?} at {}", opening_s, self.n)
+            // });
+
             // All selectors fixed to 0 so that the constraints are satisfied
             self.q_m.push(F::zero());
             self.q_l.push(F::zero());
             self.q_r.push(F::zero());
             self.q_o.push(F::zero());
             self.q_c.push(F::zero());
+
             self.q_4.push(F::zero());
             self.q_arith.push(F::zero());
             self.q_fixed_group_add.push(F::zero());
@@ -633,6 +676,8 @@ where
             .collect();
 
         let pi_vec = self.public_inputs.as_evals(self.circuit_bound());
+
+        let cw_vec = self.committed_witness.as_evals(self.circuit_bound());
         
         for i in 0..self.n {
             let qm = self.q_m[i];
@@ -645,6 +690,7 @@ where
             let _qfixed = self.q_fixed_group_add[i];
             let _qvar = self.q_variable_group_add[i];
             let pi = pi_vec[i];
+            let cw = cw_vec[i];
 
             let a = w_l[i];
             let b = w_r[i];
@@ -693,8 +739,8 @@ where
                     + (qo * c)
                     + (q4 * d)
                     + pi
+                    + cw
                     + qc);
-
             assert_eq!(k, F::zero(), "Check failed at gate {}", i,);
         }
     }

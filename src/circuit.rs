@@ -11,7 +11,7 @@ use crate::{
     error::{to_pc_error, Error},
     prelude::StandardComposer,
     proof_system::{
-        pi::PublicInputs, Proof, Prover, ProverKey, Verifier, VerifierKey,
+        cw::CommittedWitness, pi::PublicInputs, Proof, Prover, ProverKey, Verifier, VerifierKey
     },
 };
 use ark_ec::models::TEModelParameters;
@@ -170,7 +170,7 @@ where
 /// )
 /// .into_affine();
 /// // Prover POV
-/// let (proof, pi) = {
+/// let (proof, pi, cw) = {
 ///     let mut circuit: TestCircuit<BlsScalar, JubJubParameters> = TestCircuit {
 ///         a: BlsScalar::from(20u64),
 ///         b: BlsScalar::from(5u64),
@@ -263,7 +263,7 @@ where
         u_params: &PC::UniversalParams,
         prover_key: ProverKey<F>,
         transcript_init: &'static [u8],
-    ) -> Result<(Proof<F, PC>, PublicInputs<F>), Error>
+    ) -> Result<(Proof<F, PC>, PublicInputs<F>, CommittedWitness<F>), Error>
     where
         F: PrimeField,
         P: TEModelParameters<BaseField = F>,
@@ -279,8 +279,9 @@ where
         // Add ProverKey to Prover
         prover.prover_key = Some(prover_key);
         let pi = prover.cs.get_pi().clone();
+        let cw = prover.cs.get_cw().clone();
 
-        Ok((prover.prove(&ck)?, pi))
+        Ok((prover.prove(&ck)?, pi, cw))
     }
 
     /// Returns the Circuit size padded to the next power of two.
@@ -360,6 +361,7 @@ mod test {
                 gate.witness(a, b, Some(zero))
                     .add(F::one(), F::one())
                     .pi(-self.c)
+                    // .cw(-self.c)
             });
 
             // Make second constraint a * b = d
@@ -408,7 +410,7 @@ mod test {
         .into_affine();
 
         // Prover POV
-        let (proof, pi) = {
+        let (proof, pi, cw) = {
             let mut circuit: TestCircuit<F, P> = TestCircuit {
                 a: F::from(20u64),
                 b: F::from(5u64),

@@ -114,9 +114,9 @@ where
             // We constrain the point accumulator to start from the Identity
             // point and the Scalar accumulator to start from zero
             if i == 0 {
-                self.constrain_to_constant(acc_x, F::zero(), None);
-                self.constrain_to_constant(acc_y, F::one(), None);
-                self.constrain_to_constant(accumulated_bit, F::zero(), None);
+                self.constrain_to_constant(acc_x, F::zero(), None, None);
+                self.constrain_to_constant(acc_y, F::one(), None, None);
+                self.constrain_to_constant(accumulated_bit, F::zero(), None, None);
             }
 
             let x_beta = point_multiples[i].x;

@@ -87,8 +87,8 @@ where
     /// without constraining the values
     pub fn add_public_affine(&mut self, affine: TEGroupAffine<P>) -> Point<P> {
         let point = self.add_affine(affine);
-        self.constrain_to_constant(point.x, F::zero(), Some(-affine.x));
-        self.constrain_to_constant(point.y, F::zero(), Some(-affine.y));
+        self.constrain_to_constant(point.x, F::zero(), Some(-affine.x), None);
+        self.constrain_to_constant(point.y, F::zero(), Some(-affine.y), None);
         point
     }
 
@@ -112,8 +112,8 @@ where
         point: Point<P>,
         public_point: TEGroupAffine<P>,
     ) {
-        self.constrain_to_constant(point.x, F::zero(), Some(-public_point.x));
-        self.constrain_to_constant(point.y, F::zero(), Some(-public_point.y));
+        self.constrain_to_constant(point.x, F::zero(), Some(-public_point.x), None);
+        self.constrain_to_constant(point.y, F::zero(), Some(-public_point.y), None);
     }
 }
 
