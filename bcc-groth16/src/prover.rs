@@ -23,33 +23,48 @@ use rayon::prelude::*;
 type D<F> = GeneralEvaluationDomain<F>;
 
 impl<E: Pairing, QAP: R1CSToQAP, const M: usize> BccGroth16<E, QAP, M> {
-    /// Create a proof dependent commitment of cc-Groth16 with challenge tau
+    /// Create a commitment list and proof dependent commitment of cc-Groth16
+    /// with challenge tau
     #[inline]
     pub fn commit_proof_dependent_cm(
         ck: &CommittingKey<E>,
         committed_witness: &[E::ScalarField],
         rng: &mut impl Rng,
-    ) -> R1CSResult<(Commitment<E>, E::ScalarField)> {
+    ) -> R1CSResult<(Vec<E::G1Affine>, Commitment<E>, E::ScalarField)> {
         let mut transcript = Transcript::new(b"bcc_groth16");
-        let mut list_cm = vec![];
 
         let scalar = committed_witness
             .iter()
             .map(|s| s.into_bigint())
             .collect::<Vec<_>>();
 
-        for i in 0..committed_witness.len() / 2 {
-            let cm = E::G1::msm_bigint(&ck.batched, &scalar[i * 2..i * 2 + 2]);
-            list_cm.push(cm);
+        // make the list commitment
+        let list_cm: Vec<Vec<_>> = scalar
+            .iter()
+            .step_by(2)
+            .zip(scalar.iter().skip(1).step_by(2))
+            .map(|(a, b)| vec![a.clone(), b.clone()])
+            .collect();
+
+        // parallelize the computation of the list commitment
+        let list_cm = list_cm
+            .par_iter()
+            .map(|cm| E::G1::msm_bigint(&ck.batched, &cm[..]))
+            .collect::<Vec<_>>();
+
+        // normalize the list commitment
+        let list_cm = E::G1::normalize_batch(&list_cm);
+
+        list_cm.iter().for_each(|cm| {
             transcript.append_message(b"list commitment", &cm.to_string().as_bytes());
-        }
+        });
 
         // Opening for [cc-SNARK], where v * (eta / gamma)
         let v = E::ScalarField::rand(rng);
         let scalar = [&scalar[..], &[v.into_bigint()][..]].concat();
 
         let cm_acc_time = start_timer!(|| "Compute CM");
-        let g_cm = E::G1::msm_bigint(&ck.proof_dependent, &scalar);
+        let g_cm = E::G1::msm_bigint(&ck.proof_dependent, &scalar[..]);
         end_timer!(cm_acc_time);
 
         transcript.append_message(b"proof dependent commitment", g_cm.to_string().as_bytes());
@@ -60,7 +75,7 @@ impl<E: Pairing, QAP: R1CSToQAP, const M: usize> BccGroth16<E, QAP, M> {
         };
 
         let tau: E::ScalarField = transcript.challenge_scalar(b"challenge");
-        Ok((commitment, tau))
+        Ok((list_cm, commitment, tau))
     }
 
     /// Create a Groth16 proof using randomness `r` and `s` and

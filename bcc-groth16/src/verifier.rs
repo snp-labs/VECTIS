@@ -51,12 +51,20 @@ impl<E: Pairing, QAP: R1CSToQAP, const M: usize> BccGroth16<E, QAP, M> {
         // Challenge tau
         let tau: E::ScalarField = transcript.challenge_scalar(b"challenge");
 
+        let prepare_input_timer = start_timer!(|| "Prepare Inputs");
+
         let mut g_ic = pvk.vk.gamma_abc_g1[0].into_group();
+
+        let cm_aggr_timer = start_timer!(|| "Compute Aggregation Tree");
         let cm_aggr = list_cm.compute_root(tau);
+        end_timer!(cm_aggr_timer);
+
         let tau_g1 = pvk.vk.gamma_abc_g1[1].mul_bigint(tau.into_bigint());
         g_ic.add_assign(cm_aggr);
         g_ic.add_assign(proof_dependent_cm);
         g_ic.add_assign(tau_g1);
+
+        end_timer!(prepare_input_timer);
 
         Ok(g_ic)
     }
@@ -95,7 +103,10 @@ impl<E: Pairing, QAP: R1CSToQAP, const M: usize> BccGroth16<E, QAP, M> {
         proof: &Proof<E>,
         public_inputs: &[E::G1Affine],
     ) -> R1CSResult<bool> {
+        let verifier_timer = start_timer!(|| "Groth16::Verify");
         let prepared_inputs = Self::prepare_inputs(pvk, public_inputs)?;
-        Self::verify_proof_with_prepared_inputs(pvk, proof, &prepared_inputs)
+        let result = Self::verify_proof_with_prepared_inputs(pvk, proof, &prepared_inputs);
+        end_timer!(verifier_timer);
+        result
     }
 }

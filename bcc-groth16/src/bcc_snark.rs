@@ -44,7 +44,7 @@ pub trait BccSNARK<E: Pairing, F: PrimeField> {
         circuit_ck: &Self::CommittingKey,
         committed_witness: &[F],
         rng: &mut R,
-    ) -> Result<(Self::Commitment, F), Self::Error>;
+    ) -> Result<(Vec<E::G1Affine>, Self::Commitment, F), Self::Error>;
 
     /// Generates a proof of satisfaction of the arithmetic circuit C (specified
     /// as R1CS constraints).

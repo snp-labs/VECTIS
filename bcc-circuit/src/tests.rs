@@ -1,5 +1,6 @@
 use super::*;
 use crate::circuit::BccCircuit;
+
 use ark_ff::UniformRand;
 use ark_std::{
     rand::{CryptoRng, RngCore, SeedableRng},
@@ -13,7 +14,7 @@ lazy_static! {
     pub static ref PK_FILE: String = "cbdc.pk.dat".to_string();
     pub static ref VK_FILE: String = "cbdc.vk.dat".to_string();
     pub static ref PRF_FILE: String = "cbdc.proof.dat".to_string();
-    pub static ref N: usize = 1 << 4;
+    pub static ref N: usize = 1 << 20;
 }
 
 type E = ark_bn254::Bn254;
@@ -49,14 +50,7 @@ fn test_cc_groth16_without_key() {
         .flat_map(|cm| [cm.msg, cm.rand])
         .collect::<Vec<F>>();
 
-    // make random list cm (g1)
-    let mut list_cm_g1 = vec![];
-    for CM { msg, rand } in list_cm.iter() {
-        let cm_g1 = pk.ck.batched[0].mul(msg) + pk.ck.batched[1].mul(rand);
-        list_cm_g1.push(cm_g1.into_affine());
-    }
-
-    let (proof_dependent_cm, tau) =
+    let (list_cm_g1, proof_dependent_cm, tau) =
         BccGroth16::<E>::commit(&pk.ck, &committed_witness, &mut rng).unwrap();
 
     // make circuit

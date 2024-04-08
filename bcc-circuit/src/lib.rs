@@ -121,7 +121,7 @@ pub extern "C" fn prove_bn254(
     let committed_witness: Vec<_> = list_cm.iter().flat_map(|&cm| [cm.msg, cm.rand]).collect();
 
     println!("Commit proof dependent");
-    let (proof_dependent_cm, tau) =
+    let (_list_cm_g1, proof_dependent_cm, tau) =
         BccGroth16::<E>::commit(&pk.ck, committed_witness.as_slice(), &mut rng).unwrap();
 
     println!("Commitment generation done...");

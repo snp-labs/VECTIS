@@ -50,7 +50,6 @@ impl<F: PrimeField> ConstraintSynthesizer<F> for BccCircuit<F> {
         })?;
 
         let _aggr: CMVar<F> = list_cm.compute_root(rand);
-
         aggr.enforce_equal(&_aggr)?;
         Ok(())
     }
