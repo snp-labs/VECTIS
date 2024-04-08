@@ -89,7 +89,6 @@ impl<E: Pairing, QAP: R1CSToQAP, const M: usize> BccGroth16<E, QAP, M> {
         let domain_time = start_timer!(|| "Constructing evaluation domain");
 
         let domain_size = cs.num_constraints() + cs.num_instance_variables();
-        println!("Contraint Size: {}", cs.num_constraints());
         let domain = D::new(domain_size).ok_or(SynthesisError::PolynomialDegreeTooLarge)?;
         let t = domain.sample_element_outside_domain(rng);
 

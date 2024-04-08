@@ -77,6 +77,7 @@ impl<E: Pairing, QAP: R1CSToQAP, const M: usize> BccGroth16<E, QAP, M> {
         proof: &Proof<E>,
         prepared_inputs: &E::G1,
     ) -> R1CSResult<bool> {
+        let pairing_timer = start_timer!(|| "Pairing");
         let qap = E::multi_miller_loop(
             [
                 <E::G1Affine as Into<E::G1Prepared>>::into(proof.a),
@@ -91,6 +92,7 @@ impl<E: Pairing, QAP: R1CSToQAP, const M: usize> BccGroth16<E, QAP, M> {
         );
 
         let test = E::final_exponentiation(qap).ok_or(SynthesisError::UnexpectedIdentity)?;
+        end_timer!(pairing_timer);
 
         Ok(test.0 == pvk.alpha_g1_beta_g2)
     }
