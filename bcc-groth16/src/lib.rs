@@ -42,8 +42,6 @@ pub mod transcript;
 pub mod bcc_snark;
 use bcc_snark::{BccSNARK, CircuitSpecificSetupBccSNARK};
 
-pub mod utils;
-
 use ark_ec::pairing::Pairing;
 use ark_groth16::r1cs_to_qap::{LibsnarkReduction, R1CSToQAP};
 use ark_relations::r1cs::{ConstraintSynthesizer, SynthesisError};
