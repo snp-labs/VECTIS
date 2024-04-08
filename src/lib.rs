@@ -39,6 +39,7 @@ mod permutation;
 mod transcript;
 mod util;
 
+pub mod gadgets;
 pub mod circuit;
 pub mod commitment;
 pub mod constraint_system;

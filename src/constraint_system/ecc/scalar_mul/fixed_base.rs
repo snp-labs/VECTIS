@@ -170,6 +170,8 @@ mod tests {
     use ark_bls12_377::Bls12_377;
     use ark_bls12_381::Bls12_381;
     use ark_ec::{group::Group, AffineCurve};
+    use ark_ff::UniformRand;
+    use ark_std::test_rng;
 
     fn test_ecc_constraint<F, P, PC>()
     where
