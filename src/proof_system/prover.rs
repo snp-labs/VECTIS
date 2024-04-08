@@ -18,8 +18,7 @@ use crate::{
 use ark_ec::{ModelParameters, TEModelParameters};
 use ark_ff::PrimeField;
 use ark_poly::{
-    univariate::DensePolynomial, EvaluationDomain, GeneralEvaluationDomain,
-    UVPolynomial,
+    univariate::DensePolynomial, EvaluationDomain, GeneralEvaluationDomain, UVPolynomial
 };
 use ark_std::rand::Rng;
 use core::marker::PhantomData;
@@ -200,7 +199,7 @@ where
             })?;
         let n = domain.size();
 
-        // Since the caller is passing a pre-processed circuit
+        // Since the caller is passing a pre-processed circuit  
         // We assume that the Transcript has been seeded with the preprocessed
         // Commitments
         let mut transcript = self.preprocessed_transcript.clone();
@@ -210,15 +209,7 @@ where
 
         // Committed witness
         // n개에 대한 committed witness를 가져오는 부분
-
-        let cw_scalar = &self.cs.get_cw().as_evals(n); 
-
-        // let (cw_poly, cw_opening) = Self::add_blinder(&mut rand_core::OsRng, cw_scalar, 1, &domain);
-
-        // Committed witness polynomial
-        let cw_poly = 
-            DensePolynomial::from_coefficients_vec(domain.ifft(cw_scalar));
-
+        let cw_poly = self.cs.get_cw().into_dense_poly(n);
         let cw_polys = [
             label_polynomial!(cw_poly)
         ];
@@ -256,7 +247,6 @@ where
             label_polynomial!(w_r_poly),
             label_polynomial!(w_o_poly),
             label_polynomial!(w_4_poly),
-            label_polynomial!(cw_poly),
         ];
 
         // Commit to witness polynomials.
@@ -335,6 +325,7 @@ where
             &w_r_poly,
             &w_o_poly,
             &w_4_poly,
+            &cw_poly,
             &pi_poly,
             &alpha,
             &beta,
@@ -369,6 +360,7 @@ where
         let z_challenge = transcript.challenge_scalar(b"z");
         transcript.append(b"z", &z_challenge);
 
+        // Compute linearisation polynomial r(X)
         let (lin_poly, evaluations) = linearisation_poly::compute::<F, P>(
             &domain,
             prover_key,

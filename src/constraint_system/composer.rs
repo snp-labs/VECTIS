@@ -249,7 +249,8 @@ where
             composer.add_witness_to_circuit_description(F::zero());
 
         // Add dummy constraints
-        composer.add_blinding_factors(&mut rand_core::OsRng);
+        // composer.add_blinding_factors(&mut rand_core::OsRng);
+        composer.add_blinding_factors(&mut ark_std::test_rng());
 
         composer
     }
@@ -770,7 +771,8 @@ mod test {
     };
     use ark_bls12_377::Bls12_377;
     use ark_bls12_381::Bls12_381;
-    use rand_core::OsRng;
+    // use rand_core::OsRng;
+    use ark_std::test_rng;
 
     /// Tests that a circuit initially has 3 gates.
     fn test_initial_circuit_size<F, P>()
@@ -898,7 +900,8 @@ mod test {
         P: TEModelParameters<BaseField = F>,
         PC: HomomorphicCommitment<F>,
     {
-        let u_params = PC::setup(2 * 30, None, &mut OsRng).unwrap();
+        // let u_params = PC::setup(2 * 30, None, &mut OsRng).unwrap();
+        let u_params = PC::setup(2 * 30, None, &mut test_rng()).unwrap();
 
         // Create a prover struct
         let mut prover: Prover<F, P, PC> = Prover::new(b"demo");

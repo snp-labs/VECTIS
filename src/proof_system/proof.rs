@@ -344,6 +344,8 @@ where
         // Compute the public input polynomial evaluated at `z_challenge`
         let pi_eval = compute_barycentric_eval(pub_inputs, z_challenge, domain);
 
+        let cw_eval = self.evaluations.wire_evals.cw_eval; // Evaluation at `z_challenge` for committed witness
+
         let alpha_sq = alpha.square();
 
         // a + beta * sigma_1 + gamma
@@ -368,7 +370,7 @@ where
         let c = l1_eval * alpha_sq;
 
         // Return r_0
-        pi_eval - b - c
+        pi_eval + cw_eval - b - c
     }
 
     /// Computes the commitment to `[r]_1`.

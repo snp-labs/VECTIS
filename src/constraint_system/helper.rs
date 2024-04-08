@@ -13,6 +13,7 @@ use crate::{
 use ark_ec::TEModelParameters;
 use ark_ff::PrimeField;
 use rand_core::OsRng;
+use ark_std::test_rng;
 
 /// Adds dummy constraints using arithmetic gates.
 #[allow(dead_code)]
@@ -46,7 +47,8 @@ where
 {
     // Common View
     let universal_params =
-        PC::setup(2 * n, None, &mut OsRng).map_err(to_pc_error::<F, PC>)?;
+        // PC::setup(2 * n, None, &mut OsRng).map_err(to_pc_error::<F, PC>)?;
+        PC::setup(2 * n, None, &mut test_rng()).map_err(to_pc_error::<F, PC>)?;
 
     // Provers View
     let (proof, public_inputs) = {

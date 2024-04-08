@@ -35,6 +35,7 @@ pub fn compute<F, P>(
     w_r_poly: &DensePolynomial<F>,
     w_o_poly: &DensePolynomial<F>,
     w_4_poly: &DensePolynomial<F>,
+    cw_poly: &DensePolynomial<F>,
     public_inputs_poly: &DensePolynomial<F>,
     alpha: &F,
     beta: &F,
@@ -104,6 +105,7 @@ where
         &wr_eval_8n,
         &wo_eval_8n,
         &w4_eval_8n,
+        cw_poly,
         public_inputs_poly,
     )?;
 
@@ -144,6 +146,7 @@ fn compute_gate_constraint_satisfiability<F, P>(
     wr_eval_8n: &[F],
     wo_eval_8n: &[F],
     w4_eval_8n: &[F],
+    cw_poly: &DensePolynomial<F>,
     pi_poly: &DensePolynomial<F>,
 ) -> Result<Vec<F>, Error>
 where
@@ -157,6 +160,8 @@ where
             <<F as FftField>::FftParams as ark_ff::FftParameters>::TWO_ADICITY,
     })?;
     let pi_eval_8n = domain_8n.coset_fft(pi_poly);
+
+    let cw_eval_8n = domain_8n.coset_fft(cw_poly);
 
     // TODO Eliminate contribution of unused gates
     Ok((0..domain_8n.size())
@@ -197,7 +202,7 @@ where
                 CAVals::from_evaluations(&custom_vals),
             );
 
-            (arithmetic + pi_eval_8n[i])
+            (arithmetic + pi_eval_8n[i] + cw_eval_8n[i])
                 + fixed_base_scalar_mul
                 + curve_addition
         })

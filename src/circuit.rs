@@ -323,6 +323,7 @@ mod test {
     };
     use ark_ff::{FftField, PrimeField};
     use rand_core::OsRng;
+    use ark_std::test_rng;
 
     // Implements a circuit that checks:
     // 1) a + b = c where C is a PI
@@ -361,7 +362,6 @@ mod test {
                 gate.witness(a, b, Some(zero))
                     .add(F::one(), F::one())
                     .pi(-self.c)
-                    // .cw(-self.c)
             });
 
             // Make second constraint a * b = d
@@ -393,7 +393,8 @@ mod test {
         VerifierData<F, PC>: PartialEq,
     {
         // Generate CRS
-        let pp = PC::setup(1 << 10, None, &mut OsRng)
+        // let pp = PC::setup(1 << 10, None, &mut OsRng)
+        let pp = PC::setup(1 << 10, None, &mut test_rng())
             .map_err(to_pc_error::<F, PC>)?;
 
         let mut circuit = TestCircuit::<F, P>::default();

@@ -231,6 +231,47 @@ mod test {
         assert!(res.is_ok(), "{:?}", res.err().unwrap());
     }
 
+    fn test_committed_witness<F, P, PC>()
+    where
+        F: PrimeField,
+        P: TEModelParameters<BaseField = F>,
+        PC: HomomorphicCommitment<F>,
+    {
+        let res = gadget_tester::<F, P, PC>(
+            |composer: &mut StandardComposer<F, P>| {
+                let var_one = composer.add_input(F::one());
+
+                let should_be_three = composer.arithmetic_gate(|gate| {
+                    gate.witness(var_one, var_one, None)
+                        .add(F::one(), F::one())
+                        .cw(F::one())
+                });
+
+                composer.constrain_to_constant(
+                    should_be_three,
+                    F::from(3u64),
+                    None,
+                    None
+                );
+
+                let should_be_four = composer.arithmetic_gate(|gate| {
+                    gate.witness(var_one, var_one, None)
+                        .add(F::one(), F::one())
+                        .cw(F::from(2u64))
+                });
+
+                composer.constrain_to_constant(
+                    should_be_four,
+                    F::from(4u64),
+                    None,
+                    None
+                );
+            },
+            200
+        );
+        assert!(res.is_ok(), "{:?}", res.err().unwrap());
+    }
+
     fn test_correct_add_mul_gate<F, P, PC>()
     where
         F: PrimeField,
@@ -442,6 +483,7 @@ mod test {
     batch_test!(
         [
             test_public_inputs,
+            test_committed_witness,
             test_correct_add_mul_gate,
             test_correct_add_gate,
             test_correct_big_add_mul_gate,
@@ -458,6 +500,7 @@ mod test {
     batch_test!(
         [
             test_public_inputs,
+            test_committed_witness,
             test_correct_add_mul_gate,
             test_correct_add_gate,
             test_correct_big_add_mul_gate,
