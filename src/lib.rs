@@ -33,17 +33,28 @@
 #![deny(rustdoc::broken_intra_doc_links)]
 #![deny(missing_docs)]
 
+#[macro_use]
+extern crate derivative;
+
+#[macro_use]
+extern crate ark_std;
+
+#[macro_use]
+extern crate ark_ff;
+
 extern crate alloc;
 
 mod permutation;
 mod transcript;
 mod util;
 
-pub mod gadgets;
+pub mod poly_commit;
+
 pub mod circuit;
 pub mod commitment;
 pub mod constraint_system;
 pub mod error;
+pub mod gadgets;
 pub mod prelude;
 pub mod proof_system;
 

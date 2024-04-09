@@ -4,8 +4,8 @@
 
 //! The opening
 
+use crate::poly_commit::LabeledCommitment;
 use ark_ff::PrimeField;
-use ark_poly_commit::LabeledCommitment;
 
 use crate::commitment::HomomorphicCommitment;
 
@@ -15,10 +15,10 @@ pub struct Opening<F: PrimeField> {
 }
 
 /// Batched Commitment에 대한 [`BatchCommitKey`]
-pub struct BatchCommitKey<F, PC> 
+pub struct BatchCommitKey<F, PC>
 where
     F: PrimeField,
-    PC: HomomorphicCommitment<F>
+    PC: HomomorphicCommitment<F>,
 {
     pub(crate) ck: Vec<LabeledCommitment<PC::Commitment>>,
 }

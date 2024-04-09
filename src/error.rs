@@ -6,6 +6,8 @@
 
 //! A collection of all possible errors encountered in PLONK.
 
+use crate::poly_commit;
+
 /// Defines all possible errors that can be encountered in PLONK.
 #[derive(Debug)]
 pub enum Error {
@@ -84,8 +86,8 @@ pub enum Error {
     TablePreProcessingError,
 }
 
-impl From<ark_poly_commit::error::Error> for Error {
-    fn from(error: ark_poly_commit::error::Error) -> Self {
+impl From<poly_commit::error::Error> for Error {
+    fn from(error: poly_commit::error::Error) -> Self {
         Self::PCError {
             error: format!("Polynomial Commitment Error: {:?}", error),
         }
@@ -96,10 +98,7 @@ impl From<ark_poly_commit::error::Error> for Error {
 pub fn to_pc_error<F, PC>(error: PC::Error) -> Error
 where
     F: ark_ff::Field,
-    PC: ark_poly_commit::PolynomialCommitment<
-        F,
-        ark_poly::univariate::DensePolynomial<F>,
-    >,
+    PC: poly_commit::PolynomialCommitment<F, ark_poly::univariate::DensePolynomial<F>>,
 {
     Error::PCError {
         error: format!("Polynomial Commitment Error: {:?}", error),
@@ -148,10 +147,9 @@ impl std::fmt::Display for Error {
             Self::TruncatedDegreeTooLarge => {
                 write!(f, "cannot trim more than the maximum degree")
             }
-            Self::TruncatedDegreeIsZero => write!(
-                f,
-                "cannot trim PublicParameters to a maximum size of zero"
-            ),
+            Self::TruncatedDegreeIsZero => {
+                write!(f, "cannot trim PublicParameters to a maximum size of zero")
+            }
             Self::PolynomialDegreeTooLarge => write!(
                 f,
                 "proving key is not large enough to commit to said polynomial"

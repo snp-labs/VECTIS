@@ -6,6 +6,7 @@
 
 //! PLONK Permutation Prover and Verifier Data
 
+use crate::poly_commit::PCCommitment;
 use crate::{
     error::Error,
     permutation::constants::{K1, K2, K3},
@@ -13,10 +14,8 @@ use crate::{
 };
 use ark_ff::FftField;
 use ark_poly::{
-    polynomial::univariate::DensePolynomial, EvaluationDomain, Evaluations,
-    GeneralEvaluationDomain,
+    polynomial::univariate::DensePolynomial, EvaluationDomain, Evaluations, GeneralEvaluationDomain,
 };
-use ark_poly_commit::PCCommitment;
 use ark_serialize::*;
 
 /// Permutation Prover Key
@@ -102,10 +101,10 @@ where
         gamma: F,
     ) -> F {
         let x = self.linear_evaluations[index];
-        (w_l_i + (beta * x) + gamma)
-            * (w_r_i + (beta * K1::<F>() * x) + gamma)
-            * (w_o_i + (beta * K2::<F>() * x) + gamma)
-            * (w_4_i + (beta * K3::<F>() * x) + gamma)
+        (w_l_i + beta * x + gamma)
+            * (w_r_i + beta * K1::<F>() * x + gamma)
+            * (w_o_i + beta * K2::<F>() * x + gamma)
+            * (w_4_i + beta * K3::<F>() * x + gamma)
             * z_i
             * alpha
     }
@@ -133,10 +132,10 @@ where
         let right_sigma_eval = self.right_sigma.1[index];
         let out_sigma_eval = self.out_sigma.1[index];
         let fourth_sigma_eval = self.fourth_sigma.1[index];
-        let product = (w_l_i + (beta * left_sigma_eval) + gamma)
-            * (w_r_i + (beta * right_sigma_eval) + gamma)
-            * (w_o_i + (beta * out_sigma_eval) + gamma)
-            * (w_4_i + (beta * fourth_sigma_eval) + gamma)
+        let product = (w_l_i + beta * left_sigma_eval + gamma)
+            * (w_r_i + beta * right_sigma_eval + gamma)
+            * (w_o_i + beta * out_sigma_eval + gamma)
+            * (w_4_i + beta * fourth_sigma_eval + gamma)
             * z_i_next
             * alpha;
         -product
@@ -180,15 +179,9 @@ where
         );
         let domain = GeneralEvaluationDomain::new(n).ok_or(Error::InvalidEvalDomainSize {
             log_size_of_group: n.trailing_zeros(),
-            adicity:
-                <<F as FftField>::FftParams as ark_ff::FftParameters>::TWO_ADICITY,
+            adicity: <<F as FftField>::FftParams as ark_ff::FftParameters>::TWO_ADICITY,
         })?;
-        let c = self.compute_lineariser_check_is_one(
-            &domain,
-            z_challenge,
-            alpha.square(),
-            z_poly,
-        );
+        let c = self.compute_lineariser_check_is_one(&domain, z_challenge, alpha.square(), z_poly);
         Ok(&(&a + &b) + &c)
     }
 
@@ -350,8 +343,7 @@ where
             let q_2 = evaluations.wire_evals.c_eval + beta_k2_z + gamma;
 
             let beta_k3_z = beta * K3::<F>() * z_challenge;
-            let q_3 =
-                (evaluations.wire_evals.d_eval + beta_k3_z + gamma) * alpha;
+            let q_3 = (evaluations.wire_evals.d_eval + beta_k3_z + gamma) * alpha;
 
             q_0 * q_1 * q_2 * q_3
         };

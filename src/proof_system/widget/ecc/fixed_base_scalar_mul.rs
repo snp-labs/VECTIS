@@ -129,10 +129,7 @@ where
         let rhs = y_alpha * acc_y - P::COEFF_A * x_alpha * acc_x;
         let y_acc_consistency = (lhs - rhs) * kappa_cu;
 
-        let checks = bit_consistency
-            + x_acc_consistency
-            + y_acc_consistency
-            + xy_consistency;
+        let checks = bit_consistency + x_acc_consistency + y_acc_consistency + xy_consistency;
 
         checks * separation_challenge
     }

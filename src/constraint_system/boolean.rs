@@ -51,10 +51,7 @@ where
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::{
-        batch_test, commitment::HomomorphicCommitment,
-        constraint_system::helper::*,
-    };
+    use crate::{batch_test, commitment::HomomorphicCommitment, constraint_system::helper::*};
     use ark_bls12_377::Bls12_377;
     use ark_bls12_381::Bls12_381;
     use ark_ec::TEModelParameters;

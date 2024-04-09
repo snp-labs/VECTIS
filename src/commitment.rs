@@ -1,21 +1,17 @@
 //! Useful commitment stuff
-use ark_ec::{msm::VariableBaseMSM, AffineCurve, PairingEngine};
+use crate::poly_commit::{kzg10, sonic_pc::SonicKZG10, PolynomialCommitment};
+use ark_ec::{msm::VariableBaseMSM, PairingEngine};
 use ark_ff::{Field, PrimeField};
 use ark_poly::univariate::DensePolynomial;
-use ark_poly_commit::{sonic_pc::SonicKZG10, PolynomialCommitment};
 
 /// A homomorphic polynomial commitment
-pub trait HomomorphicCommitment<F>:
-    PolynomialCommitment<F, DensePolynomial<F>>
+pub trait HomomorphicCommitment<F>: PolynomialCommitment<F, DensePolynomial<F>>
 where
     F: PrimeField,
     Self::VerifierKey: core::fmt::Debug,
 {
     /// Combine a linear combination of homomorphic commitments
-    fn multi_scalar_mul(
-        commitments: &[Self::Commitment],
-        scalars: &[F],
-    ) -> Self::Commitment;
+    fn multi_scalar_mul(commitments: &[Self::Commitment], scalars: &[F]) -> Self::Commitment;
 }
 
 /// The Default KZG-style commitment scheme
@@ -41,52 +37,9 @@ where
 
         let points_repr = commitments.iter().map(|c| c.0).collect::<Vec<_>>();
 
-        ark_poly_commit::kzg10::Commitment::<E>(
-            VariableBaseMSM::multi_scalar_mul(&points_repr, &scalars_repr)
-                .into(),
+        kzg10::Commitment::<E>(
+            VariableBaseMSM::multi_scalar_mul(&points_repr, &scalars_repr).into(),
         )
-    }
-}
-
-/// Shortened type for Inner Product Argument polynomial commitment schemes
-pub type IPA<G, D> = ark_poly_commit::ipa_pc::InnerProductArgPC<
-    G,
-    D,
-    DensePolynomial<<G as ark_ec::AffineCurve>::ScalarField>,
->;
-/// Shortened type for an Inner Product Argument polynomial commitment
-pub type IPACommitment<G, D> = <IPA<G, D> as PolynomialCommitment<
-    <G as AffineCurve>::ScalarField,
-    DensePolynomial<<G as AffineCurve>::ScalarField>,
->>::Commitment;
-
-use blake2::digest::Digest;
-impl<G, D> HomomorphicCommitment<<G as ark_ec::AffineCurve>::ScalarField>
-    for IPA<G, D>
-where
-    G: AffineCurve,
-    D: Digest,
-{
-    fn multi_scalar_mul(
-        commitments: &[IPACommitment<G, D>],
-        scalars: &[<G as ark_ec::AffineCurve>::ScalarField],
-    ) -> IPACommitment<G, D> {
-        let scalars_repr = scalars
-            .iter()
-            .map(<G as ark_ec::AffineCurve>::ScalarField::into_repr)
-            .collect::<Vec<_>>();
-
-        let points_repr =
-            commitments.iter().map(|c| c.comm).collect::<Vec<_>>();
-
-        IPACommitment::<G, D> {
-            comm: VariableBaseMSM::multi_scalar_mul(
-                &points_repr,
-                &scalars_repr,
-            )
-            .into(),
-            shifted_comm: None, // TODO: support degree bounds?
-        }
     }
 }
 

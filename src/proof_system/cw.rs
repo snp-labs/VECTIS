@@ -14,12 +14,9 @@
 use alloc::collections::BTreeMap;
 use ark_ff::{FftField, ToConstraintField};
 use ark_poly::{
-    univariate::DensePolynomial, EvaluationDomain, GeneralEvaluationDomain,
-    UVPolynomial,
+    univariate::DensePolynomial, EvaluationDomain, GeneralEvaluationDomain, UVPolynomial,
 };
-use ark_serialize::{
-    CanonicalDeserialize, CanonicalSerialize, Read, SerializationError, Write,
-};
+use ark_serialize::{CanonicalDeserialize, CanonicalSerialize, Read, SerializationError, Write};
 use itertools::Itertools;
 
 use crate::prelude::Error;
@@ -54,7 +51,10 @@ where
     /// occupied position.
     fn insert(&mut self, pos: usize, val: F) {
         if self.values.contains_key(&pos) {
-            panic!("Insertion in commited witness conflicts with previous value at position {}", pos);
+            panic!(
+                "Insertion in commited witness conflicts with previous value at position {}",
+                pos
+            );
         }
         if val != F::zero() {
             self.values.insert(pos, val);
@@ -76,11 +76,7 @@ where
     /// elements in consecutive positions.
     /// Returns the number of field elements occupied by `iter`
     /// [`Error::InvalidPublicInputValue`] if the input could not be converted.
-    fn extend<'t, T, I>(
-        &mut self,
-        init_pos: usize,
-        iter: I,
-    ) -> Result<usize, Error>
+    fn extend<'t, T, I>(&mut self, init_pos: usize, iter: I) -> Result<usize, Error>
     where
         T: 't + ToConstraintField<F>,
         I: IntoIterator<Item = &'t T>,
@@ -124,12 +120,12 @@ where
         T: ToConstraintField<F>,
     {
         let mut cw = Self::new();
-        pos.iter().zip_eq(vals).try_for_each(
-            |(p, v)| -> Result<(), Error> {
+        pos.iter()
+            .zip_eq(vals)
+            .try_for_each(|(p, v)| -> Result<(), Error> {
                 cw.add_input(*p, v)?;
                 Ok(())
-            },
-        )?;
+            })?;
         Ok(cw)
     }
 

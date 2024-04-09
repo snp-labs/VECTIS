@@ -12,8 +12,7 @@ pub mod ecc;
 use crate::{
     commitment::HomomorphicCommitment,
     proof_system::{
-        linearisation_poly::CustomEvaluations,
-        linearisation_poly::ProofEvaluations, permutation,
+        linearisation_poly::CustomEvaluations, linearisation_poly::ProofEvaluations, permutation,
     },
     transcript::TranscriptProtocol,
 };
@@ -82,8 +81,7 @@ where
         wit_vals: WitnessValues<F>,
         custom_vals: Self::CustomVals,
     ) -> F {
-        selector
-            * Self::constraints(separation_challenge, wit_vals, custom_vals)
+        selector * Self::constraints(separation_challenge, wit_vals, custom_vals)
     }
 
     /// Computes the linearisation polynomial term for the given gate type
@@ -95,8 +93,7 @@ where
         wit_vals: WitnessValues<F>,
         custom_vals: Self::CustomVals,
     ) -> DensePolynomial<F> {
-        selector_polynomial
-            * Self::constraints(separation_challenge, wit_vals, custom_vals)
+        selector_polynomial * Self::constraints(separation_challenge, wit_vals, custom_vals)
     }
 
     /// Extends `scalars` and `points` to build the linearisation commitment
@@ -137,9 +134,7 @@ where
         bound = "arithmetic::VerifierKey<F,PC>: core::fmt::Debug, PC::Commitment: core::fmt::Debug"
     ),
     Eq(bound = "arithmetic::VerifierKey<F,PC>: Eq, PC::Commitment: Eq"),
-    PartialEq(
-        bound = "arithmetic::VerifierKey<F,PC>: PartialEq, PC::Commitment: PartialEq"
-    )
+    PartialEq(bound = "arithmetic::VerifierKey<F,PC>: PartialEq, PC::Commitment: PartialEq")
 )]
 pub struct VerifierKey<F, PC>
 where
@@ -266,8 +261,7 @@ where
     pub(crate) fixed_group_add_selector: (DensePolynomial<F>, Evaluations<F>),
 
     /// Variable Group Addition Selector
-    pub(crate) variable_group_add_selector:
-        (DensePolynomial<F>, Evaluations<F>),
+    pub(crate) variable_group_add_selector: (DensePolynomial<F>, Evaluations<F>),
 
     /// ProverKey for permutation checks
     pub(crate) permutation: permutation::ProverKey<F>,
@@ -411,8 +405,7 @@ mod test {
             .unwrap();
 
         let obtained_pk: ProverKey<F> =
-            ProverKey::deserialize_unchecked(prover_key_bytes.as_slice())
-                .unwrap();
+            ProverKey::deserialize_unchecked(prover_key_bytes.as_slice()).unwrap();
 
         assert_eq!(prover_key, obtained_pk);
     }
@@ -457,7 +450,7 @@ mod test {
             left_sigma,
             right_sigma,
             out_sigma,
-            fourth_sigma
+            fourth_sigma,
         );
 
         let mut verifier_key_bytes = vec![];
@@ -466,8 +459,7 @@ mod test {
             .unwrap();
 
         let obtained_vk: VerifierKey<F, PC> =
-            VerifierKey::deserialize_unchecked(verifier_key_bytes.as_slice())
-                .unwrap();
+            VerifierKey::deserialize_unchecked(verifier_key_bytes.as_slice()).unwrap();
 
         assert!(verifier_key == obtained_vk);
     }

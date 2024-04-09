@@ -24,6 +24,7 @@ default = [
     "asm",
     "itertools/default",
     "parallel",
+    "std"
 ]
 
 # Raw Assembly
@@ -33,8 +34,9 @@ asm = ["ark-ff/asm"]
 parallel = [
     "ark-ec/parallel",
     "ark-ff/parallel",
-    "ark-poly-commit/parallel",
     "ark-poly/parallel",
+    "ark-std/parallel",
+    "rayon"
 ]
 
 # Enable Standard Library
@@ -56,7 +58,6 @@ blake2 = "0.9"
 ark-ec = { version = "0.3", default-features = false }
 ark-ff = { version = "0.3", default-features = false }
 ark-poly = { version = "0.3" }
-ark-poly-commit = { version = "0.3" }
 ark-serialize = { version = "0.3", features = ["derive"] }
 derivative = { version = "2.2.0", default-features = false, features = ["use_core"] }
 hashbrown = { version = "0.11.2", default-features = false, features = ["ahash"] }
@@ -65,6 +66,7 @@ itertools = { version = "0.10.1", default-features = false }
 merlin = { version = "3.0", default-features = false }
 num-traits = { version = "0.2.14" }
 rand_core = {version = "0.6", default-features=false, features = ["getrandom"] }
+rayon = { version = "1", optional = true }
 
 [dev-dependencies]
 ark-bls12-377 = "0.3"

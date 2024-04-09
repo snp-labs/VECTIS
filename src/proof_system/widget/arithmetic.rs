@@ -6,13 +6,11 @@
 
 //! Arithmetic Gates
 
+use crate::poly_commit::PolynomialCommitment;
+use crate::proof_system::linearisation_poly::ProofEvaluations;
 use crate::proof_system::WitnessValues;
-use crate::{
-    proof_system::linearisation_poly::ProofEvaluations,
-};
 use ark_ff::{FftField, PrimeField};
 use ark_poly::{polynomial::univariate::DensePolynomial, Evaluations};
-use ark_poly_commit::PolynomialCommitment;
 use ark_serialize::*;
 
 /// Arithmetic Gates Prover Key
@@ -50,16 +48,12 @@ where
 {
     /// Computes the arithmetic gate contribution to the quotient polynomial at
     /// the element of the domain at the given `index`.
-    pub fn compute_quotient_i(
-        &self,
-        index: usize,
-        wit_vals: WitnessValues<F>,
-    ) -> F {
-        ((wit_vals.a_val * wit_vals.b_val * self.q_m.1[index])
-            + (wit_vals.a_val * self.q_l.1[index])
-            + (wit_vals.b_val * self.q_r.1[index])
-            + (wit_vals.c_val * self.q_o.1[index])
-            + (wit_vals.d_val * self.q_4.1[index])
+    pub fn compute_quotient_i(&self, index: usize, wit_vals: WitnessValues<F>) -> F {
+        (wit_vals.a_val * wit_vals.b_val * self.q_m.1[index]
+            + wit_vals.a_val * self.q_l.1[index]
+            + wit_vals.b_val * self.q_r.1[index]
+            + wit_vals.c_val * self.q_o.1[index]
+            + wit_vals.d_val * self.q_4.1[index]
             + self.q_c.1[index])
             * self.q_arith.1[index]
     }
@@ -74,11 +68,11 @@ where
         d_eval: F,
         q_arith_eval: F,
     ) -> DensePolynomial<F> {
-        &(&((&self.q_m.0 * (a_eval * b_eval))
-            + (&self.q_l.0 * a_eval)
-            + (&self.q_r.0 * b_eval)
-            + (&self.q_o.0 * c_eval)
-            + (&self.q_4.0 * d_eval))
+        &(&(&self.q_m.0 * (a_eval * b_eval)
+            + &self.q_l.0 * a_eval
+            + &self.q_r.0 * b_eval
+            + &self.q_o.0 * c_eval
+            + &self.q_4.0 * d_eval)
             + &self.q_c.0)
             * q_arith_eval
     }
@@ -135,11 +129,7 @@ where
     ) {
         let q_arith_eval = evaluations.custom_evals.get("q_arith_eval");
 
-        scalars.push(
-            evaluations.wire_evals.a_eval
-                * evaluations.wire_evals.b_eval
-                * q_arith_eval,
-        );
+        scalars.push(evaluations.wire_evals.a_eval * evaluations.wire_evals.b_eval * q_arith_eval);
         points.push(self.q_m.clone());
 
         scalars.push(evaluations.wire_evals.a_eval * q_arith_eval);
