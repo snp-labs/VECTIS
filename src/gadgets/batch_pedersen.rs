@@ -118,48 +118,39 @@ mod test {
 
         fn gadget(&mut self, composer: &mut StandardComposer<F, P>) -> Result<(), Error> {
             let zero = composer.zero_var;
-
-            let m_var_vec: Vec<Variable> = self.m_vec
-                .iter()
-                .map(|m| composer.add_input(*m))
-                .collect();
-
-            let o_var_vec: Vec<Variable> = self.o_vec
-                .iter()
-                .map(|o| composer.add_input(*o))
-                .collect();
-
-            let rand: Variable = composer.add_input(self.rand);
-
-            let agg_m = aggregate_variable_vector(m_var_vec.clone(), rand, composer)?;
-
-            let agg_o = aggregate_variable_vector(o_var_vec.clone(), rand, composer)?;
-
-            // Committed witness : agg_message
-            composer.arithmetic_gate(|gate| {
-                gate.witness(agg_m, zero, Some(zero)).add(-F::one(), F::zero()).cw(self.agg[0])
+            let agg_m_expected = composer.arithmetic_gate(|gate| {
+                gate.witness(zero, zero, None).add(F::zero(), F::zero()).cw(self.agg[0])
+            });
+            let agg_o_expected = composer.arithmetic_gate(|gate| {
+                gate.witness(zero, zero, None).add(F::zero(), F::zero()).cw(self.agg[1])
             });
 
-            // Committed witness : agg_opening
-            composer.arithmetic_gate(|gate| {
-                gate.witness(agg_o, zero, Some(zero)).add(-F::one(), F::zero()).cw(self.agg[1])
-            });
+            let mut m_var_vec: Vec<Variable> = Vec::new();
+            let mut o_var_vec: Vec<Variable> = Vec::new();
 
             for i in 0..N {
                 // Committed witness : message_i
-                composer.arithmetic_gate(|gate| {
-                    gate.witness(m_var_vec[i], zero, Some(zero))
-                        .add(-F::one(), F::zero())
-                        .cw(self.m_vec[i])
-                });
+                m_var_vec.push(
+                    composer.arithmetic_gate(|gate| {
+                        gate.witness(zero, zero, None).add(F::zero(), F::zero()).cw(self.m_vec[i])
+                    })
+                );
 
                 // Committed witness : opening_i
-                composer.arithmetic_gate(|gate| {
-                    gate.witness(o_var_vec[i], zero, Some(zero))
-                        .add(-F::one(), F::zero())
-                        .cw(self.o_vec[i])
-                });
+                o_var_vec.push(
+                    composer.arithmetic_gate(|gate| {
+                        gate.witness(zero, zero, None).add(F::zero(), F::zero()).cw(self.o_vec[i])
+                    })
+                );
             }
+
+            let rand: Variable = composer.add_input(self.rand);
+            let agg_m = aggregate_variable_vector(m_var_vec.clone(), rand, composer)?;
+            let agg_o = aggregate_variable_vector(o_var_vec.clone(), rand, composer)?;
+
+            // Equality check
+            composer.assert_equal(agg_m, agg_m_expected);
+            composer.assert_equal(agg_o, agg_o_expected);
 
             Ok(())
         }
