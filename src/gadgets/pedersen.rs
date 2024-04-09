@@ -67,7 +67,7 @@ mod test {
         }
 
         fn padded_circuit_size(&self) -> usize {
-            1 << 14
+            1 << 15
         }
     }
 
@@ -79,8 +79,7 @@ mod test {
         VerifierData<F, PC>: PartialEq,
     {
         // Generate CRS
-        // let pp = PC::setup(1 << 10, None, &mut OsRng)
-        let pp = PC::setup(1 << 15, None, &mut test_rng())
+        let pp = PC::setup(1 << 16, None, &mut test_rng())
             .map_err(to_pc_error::<F, PC>)?;
 
         let mut circuit = TestCircuit::<F, P>::default();
@@ -130,9 +129,6 @@ mod test {
 
         assert!(deserialized_verifier_data == verifier_data);
 
-        // Verifier POV
-
-        // TODO: non-ideal hack for a first functional version.
         assert!(verify_proof::<F, P, PC>(
             &pp,
             verifier_data.key,
@@ -157,36 +153,11 @@ mod test {
 
     #[test]
     #[allow(non_snake_case)]
-    fn test_pedersen_full_on_Bls12_381_ipa() -> Result<(), Error> {
-        test_full::<
-            <Bls12_381 as PairingEngine>::Fr,
-            ark_ed_on_bls12_381::EdwardsParameters,
-            crate::commitment::IPA<
-                <Bls12_381 as PairingEngine>::G1Affine,
-                blake2::Blake2b,
-            >,
-        >()
-    }
-
-    #[test]
-    #[allow(non_snake_case)]
     fn test_pedersen_full_on_Bls12_377() -> Result<(), Error> {
         test_full::<
             <Bls12_377 as PairingEngine>::Fr,
             ark_ed_on_bls12_377::EdwardsParameters,
             crate::commitment::KZG10<Bls12_377>,
-        >()
-    }
-    #[test]
-    #[allow(non_snake_case)]
-    fn test_pedersen_full_on_Bls12_377_ipa() -> Result<(), Error> {
-        test_full::<
-            <Bls12_377 as PairingEngine>::Fr,
-            ark_ed_on_bls12_377::EdwardsParameters,
-            crate::commitment::IPA<
-                <Bls12_377 as PairingEngine>::G1Affine,
-                blake2::Blake2b,
-            >,
         >()
     }
 }

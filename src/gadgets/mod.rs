@@ -8,3 +8,6 @@
 
 /// Pedersen Gadget
 pub mod pedersen;
+
+/// Batch Pedersen Gadget
+pub mod batch_pedersen;

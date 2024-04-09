@@ -11,7 +11,7 @@ use crate::{
     error::{to_pc_error, Error},
     label_polynomial,
     proof_system::{
-        linearisation_poly, proof::Proof, quotient_poly, ProverKey,
+        aux::Opening, linearisation_poly, proof::Proof, quotient_poly, ProverKey
     },
     transcript::TranscriptProtocol,
 };
@@ -20,7 +20,7 @@ use ark_ff::PrimeField;
 use ark_poly::{
     univariate::DensePolynomial, EvaluationDomain, GeneralEvaluationDomain, UVPolynomial
 };
-use ark_std::rand::Rng;
+use ark_std::{rand::Rng, test_rng};
 use core::marker::PhantomData;
 use merlin::Transcript;
 
@@ -191,7 +191,7 @@ where
         commit_key: &PC::CommitterKey,
         prover_key: &ProverKey<F>,
         _data: PhantomData<PC>,
-    ) -> Result<Proof<F, PC>, Error> {
+    ) -> Result<(Proof<F, PC>, Opening<F>), Error> {
         let domain =
             GeneralEvaluationDomain::new(self.cs.circuit_bound()).ok_or(Error::InvalidEvalDomainSize {
                 log_size_of_group: self.cs.circuit_bound().trailing_zeros(),
@@ -209,7 +209,14 @@ where
 
         // Committed witness
         // n개에 대한 committed witness를 가져오는 부분
-        let cw_poly = self.cs.get_cw().into_dense_poly(n);
+        let cw = self.cs.get_cw().as_evals(n);
+        // let cw_opening: Vec<F> = cw[1..3].into(); // Committed witness's blinding factor
+        
+        // Add blinding Factor
+        let (cw_poly, cw_opening) = Self::add_blinder(&mut test_rng(), &cw, 1, &domain);
+
+        // Committed witness polynomial
+        // let cw_poly = self.cs.get_cw().into_dense_poly(n);
         let cw_polys = [
             label_polynomial!(cw_poly)
         ];
@@ -218,7 +225,6 @@ where
         let (cw_comm, cw_rand) = 
             PC::commit(commit_key, cw_polys.iter(), None)
             .map_err(to_pc_error::<F, PC>)?;
-
 
         // 1. Compute witness Polynomials
         //
@@ -469,7 +475,7 @@ where
         )
         .map_err(to_pc_error::<F, PC>)?;
 
-        Ok(Proof {
+        Ok((Proof {
             a_comm: w_commits[0].commitment().clone(),
             b_comm: w_commits[1].commitment().clone(),
             c_comm: w_commits[2].commitment().clone(),
@@ -483,7 +489,9 @@ where
             aw_opening,
             saw_opening,
             evaluations,
-        })
+        }, Opening {
+            opening: cw_opening
+        }))
     }
 
     /// Proves a circuit is satisfied, then clears the witness variables
@@ -492,7 +500,7 @@ where
     pub fn prove(
         &mut self,
         commit_key: &PC::CommitterKey,
-    ) -> Result<Proof<F, PC>, Error> {
+    ) -> Result<(Proof<F, PC>, Opening<F>), Error> {
         if self.prover_key.is_none() {
             // Preprocess circuit and store preprocessed circuit and transcript
             // in the Prover.
@@ -504,7 +512,7 @@ where
         }
 
         let prover_key = self.prover_key.as_ref().unwrap();
-        let proof = self.prove_with_preprocessed(
+        let (proof, opening) = self.prove_with_preprocessed(
             commit_key,
             prover_key,
             PhantomData::<PC>,
@@ -513,7 +521,7 @@ where
         // Clear witness and reset composer variables
         self.clear_witness();
 
-        Ok(proof)
+        Ok((proof, opening))
     }
 }
 

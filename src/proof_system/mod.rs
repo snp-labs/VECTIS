@@ -12,6 +12,7 @@ mod preprocess;
 mod quotient_poly;
 mod widget;
 
+pub mod aux;
 pub mod cw;
 pub mod pi;
 pub mod proof;

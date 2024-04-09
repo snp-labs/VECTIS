@@ -229,7 +229,8 @@ where
         PC: HomomorphicCommitment<F>,
     {
         // Setup PublicParams
-        let circuit_size = self.padded_circuit_size();
+        // let circuit_size = self.padded_circuit_size();
+        let circuit_size = self.padded_circuit_size() + 6;
         let (ck, _) = PC::trim(u_params, circuit_size, 0, None)
             .map_err(to_pc_error::<F, PC>)?;
 
@@ -269,7 +270,8 @@ where
         P: TEModelParameters<BaseField = F>,
         PC: HomomorphicCommitment<F>,
     {
-        let circuit_size = self.padded_circuit_size();
+        // let circuit_size = self.padded_circuit_size();
+        let circuit_size = self.padded_circuit_size() + 6;
         let (ck, _) = PC::trim(u_params, circuit_size, 0, None)
             .map_err(to_pc_error::<F, PC>)?;
         // New Prover instance
@@ -281,7 +283,7 @@ where
         let pi = prover.cs.get_pi().clone();
         let cw = prover.cs.get_cw().clone();
 
-        Ok((prover.prove(&ck)?, pi, cw))
+        Ok((prover.prove(&ck)?.0, pi, cw))
     }
 
     /// Returns the Circuit size padded to the next power of two.
@@ -303,7 +305,8 @@ where
     PC: HomomorphicCommitment<F>,
 {
     let mut verifier: Verifier<F, P, PC> = Verifier::new(transcript_init);
-    let padded_circuit_size = plonk_verifier_key.padded_circuit_size();
+    // let padded_circuit_size = plonk_verifier_key.padded_circuit_size();
+    let padded_circuit_size = plonk_verifier_key.padded_circuit_size() + 6;
     verifier.verifier_key = Some(plonk_verifier_key);
     let (_, vk) = PC::trim(u_params, padded_circuit_size, 0, None)
         .map_err(to_pc_error::<F, PC>)?;

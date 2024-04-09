@@ -19,8 +19,11 @@ use ark_poly::{
     polynomial::univariate::DensePolynomial, EvaluationDomain, Evaluations,
     GeneralEvaluationDomain, UVPolynomial,
 };
+use ark_poly_commit::LabeledCommitment;
 use core::marker::PhantomData;
 use merlin::Transcript;
+
+use super::aux::BatchCommitKey;
 
 /// Struct that contains all of the selector and permutation [`Polynomial`]s in
 /// PLONK.
@@ -267,6 +270,7 @@ where
             widget::VerifierKey<F, PC>,
             SelectorPolynomials<F>,
             GeneralEvaluationDomain<F>,
+            // BatchCommitKey<F, PC>
         ),
         Error,
     >
@@ -383,6 +387,29 @@ where
         // Add the circuit description to the transcript
         verifier_key.seed_transcript(transcript);
 
+        let zero_poly: DensePolynomial<F> = domain.vanishing_polynomial().into();
+
+        let mut zero_coeffs = zero_poly.coeffs().to_vec();
+        zero_coeffs.insert(0, F::zero());
+
+        let coset_gen = F::multiplicative_generator().pow([domain.size() as u64]);
+
+        zero_coeffs[1] = -coset_gen;
+        let x_zero_poly = DensePolynomial::<F>::from_coefficients_vec(zero_coeffs);
+
+        let ck_poly = [
+            label_polynomial!(zero_poly),
+            label_polynomial!(x_zero_poly)
+        ];
+
+        let (ck_vec, _) = 
+            PC::commit(commit_key, ck_poly.iter(), None)
+            .map_err(to_pc_error::<F, PC>)?;
+
+
+        // Ok((verifier_key, selectors, domain, BatchCommitKey {
+        //     ck: ck_vec
+        // }))
         Ok((verifier_key, selectors, domain))
     }
 }

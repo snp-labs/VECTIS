@@ -51,7 +51,7 @@ where
         PC::setup(2 * n, None, &mut test_rng()).map_err(to_pc_error::<F, PC>)?;
 
     // Provers View
-    let (proof, public_inputs) = {
+    let ((proof, opening), public_inputs) = {
         // Create a prover struct
         let mut prover = Prover::<F, P, PC>::new(b"demo");
 
@@ -63,8 +63,13 @@ where
 
         // Commit Key
         let (ck, _) =
-            PC::trim(&universal_params, prover.circuit_bound(), 0, None)
+            PC::trim(&universal_params, prover.circuit_bound() + 6, 0, None)
                 .map_err(to_pc_error::<F, PC>)?;
+
+        // let (ck, _) =
+        // PC::trim(&universal_params, prover.circuit_bound(), 0, None)
+        //     .map_err(to_pc_error::<F, PC>)?;
+            
 
         // Preprocess circuit
         prover.preprocess(&ck)?;
@@ -88,8 +93,11 @@ where
     gadget(verifier.mut_cs());
 
     // Compute Commit and Verifier Key
+    // let (ck, vk) =
+    //     PC::trim(&universal_params, verifier.circuit_bound(), 0, None)
+    //         .map_err(to_pc_error::<F, PC>)?;
     let (ck, vk) =
-        PC::trim(&universal_params, verifier.circuit_bound(), 0, None)
+        PC::trim(&universal_params, verifier.circuit_bound() + 6, 0, None)
             .map_err(to_pc_error::<F, PC>)?;
 
     // Preprocess circuit

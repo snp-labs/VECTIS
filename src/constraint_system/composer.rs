@@ -601,9 +601,11 @@ where
             self.q_r.push(F::zero());
             self.q_o.push(F::zero());
             self.q_c.push(F::zero());
+            // self.q_c.push(-opening_s);
 
             self.q_4.push(F::zero());
             self.q_arith.push(F::zero());
+            // self.q_arith.push(F::one());
             self.q_fixed_group_add.push(F::zero());
             self.q_variable_group_add.push(F::zero());
 
@@ -910,7 +912,8 @@ mod test {
         dummy_gadget(10, prover.mut_cs());
 
         // Commit Key
-        let (ck, vk) = PC::trim(&u_params, 2 * 20, 0, None).unwrap();
+        // let (ck, vk) = PC::trim(&u_params, 2 * 20, 0, None).unwrap();
+        let (ck, vk) = PC::trim(&u_params, 2 * 20 + 6, 0, None).unwrap();
 
         // Preprocess circuit
         prover.preprocess(&ck).unwrap();
@@ -937,7 +940,7 @@ mod test {
         // Preprocess
         verifier.preprocess(&ck).unwrap();
 
-        for proof in proofs {
+        for (proof, _) in proofs {
             assert!(verifier.verify(&proof, &vk, &public_inputs).is_ok());
         }
     }
