@@ -59,6 +59,48 @@ fn test_bcc_groth16_num_constraints() {
 }
 
 #[test]
+fn test_bcc_groth16_key_size() {
+    let mut result_pk = vec![];
+    let mut result_vk = vec![];
+    let mut result_batched = vec![];
+    let mut result_proof_dependent = vec![];
+
+    for n in 0..=*LOG_N {
+        println!("Batch Size: 2^{}", n);
+        
+        let mock = BccCircuit::<F>::default(1 << n);
+        let mut rng = ark_std::rand::rngs::StdRng::seed_from_u64(test_rng().next_u64());
+
+        let (pk, vk) = BccGroth16::<E>::setup(mock, &mut rng).unwrap();
+        
+        let mut pk_bytes = Vec::new();
+        pk.serialize_compressed(&mut pk_bytes).unwrap();
+        result_pk.push(pk_bytes.len());
+
+        let mut vk_bytes = Vec::new();
+        vk.serialize_compressed(&mut vk_bytes).unwrap();
+        result_vk.push(vk_bytes.len());
+
+        let mut batched_bytes = Vec::new();
+        pk.ck.batched.serialize_compressed(&mut batched_bytes).unwrap();
+        result_batched.push(batched_bytes.len());
+
+        let mut proof_dependent_bytes = Vec::new();
+        pk.ck.proof_dependent.serialize_compressed(&mut proof_dependent_bytes).unwrap();
+        result_proof_dependent.push(proof_dependent_bytes.len());
+    }
+    println!("{:?}", result_pk);
+    println!("{:?}", result_vk);
+    println!("{:?}", result_batched);
+    println!("{:?}", result_proof_dependent);
+
+    assert_eq!(result_pk.len(), *LOG_N + 1, "invalid number of tests 1");
+    assert_eq!(result_vk.len(), *LOG_N + 1, "invalid number of tests 2");
+    assert_eq!(result_batched.len(), *LOG_N + 1, "invalid number of tests 3");
+    assert_eq!(result_proof_dependent.len(), *LOG_N + 1, "invalid number of tests 4");
+}
+
+#[test]
 fn test_cc_groth16_without_key() {
     for n in 0..=*LOG_N {
         let batch_size = 1 << n;
