@@ -5,7 +5,7 @@
 //! proposed by Kate, Zaverucha, and Goldberg ([KZG11](http://cacr.uwaterloo.ca/techreports/2010/cacr2010-10.pdf)).
 //! This construction achieves extractability in the algebraic group model (AGM).
 
-use crate::poly_commit::{BTreeMap, Error, LabeledPolynomial, PCRandomness, ToString, Vec};
+use crate::poly_commit::{convert_to_bigints, skip_leading_zeros_and_convert_to_bigints, BTreeMap, Error, LabeledPolynomial, PCRandomness, ToString, Vec};
 use ark_ec::msm::{FixedBaseMSM, VariableBaseMSM};
 use ark_ec::{group::Group, AffineCurve, PairingEngine, ProjectiveCurve};
 use ark_ff::{One, PrimeField, UniformRand, Zero};
@@ -13,8 +13,6 @@ use ark_poly::UVPolynomial;
 use ark_std::{format, marker::PhantomData, ops::Div, vec};
 
 use ark_std::rand::RngCore;
-#[cfg(feature = "parallel")]
-use rayon::prelude::*;
 
 mod data_structures;
 pub use data_structures::*;
@@ -83,6 +81,8 @@ where
         powers_of_gamma_g.push(powers_of_gamma_g.last().unwrap().mul(&beta));
         end_timer!(gamma_g_time);
 
+        
+
         let powers_of_g = E::G1Projective::batch_normalization_into_affine(&powers_of_g);
         let powers_of_gamma_g =
             E::G1Projective::batch_normalization_into_affine(&powers_of_gamma_g)
@@ -131,7 +131,7 @@ where
             beta_h,
             neg_powers_of_h,
             prepared_h,
-            prepared_beta_h,
+            prepared_beta_h
         };
         end_timer!(setup_time);
         Ok(pp)
@@ -165,30 +165,73 @@ where
         let mut randomness = Randomness::<E::Fr, P>::empty();
         if let Some(hiding_degree) = hiding_bound {
             let mut rng = rng.ok_or(Error::MissingRng)?;
-            let sample_random_poly_time = start_timer!(|| format!(
-                "Sampling a random polynomial of degree {}",
-                hiding_degree
-            ));
+            let sample_random_poly_time = start_timer!(||
+                format!("Sampling a random polynomial of degree {}", hiding_degree)
+            );
 
             randomness = Randomness::rand(hiding_degree, false, None, &mut rng);
             Self::check_hiding_bound(
                 randomness.blinding_polynomial.degree(),
-                powers.powers_of_gamma_g.len(),
+                powers.powers_of_gamma_g.len()
             )?;
             end_timer!(sample_random_poly_time);
         }
 
         let random_ints = convert_to_bigints(&randomness.blinding_polynomial.coeffs());
         let msm_time = start_timer!(|| "MSM to compute commitment to random poly");
-        let random_commitment =
-            VariableBaseMSM::multi_scalar_mul(&powers.powers_of_gamma_g, random_ints.as_slice())
-                .into_affine();
+        let random_commitment = VariableBaseMSM::multi_scalar_mul(
+            &powers.powers_of_gamma_g,
+            random_ints.as_slice()
+        ).into_affine();
         end_timer!(msm_time);
 
         commitment.add_assign_mixed(&random_commitment);
 
         end_timer!(commit_time);
         Ok((Commitment(commitment.into()), randomness))
+    }
+
+    /// Outputs a proof-dependent commitment.
+    pub fn commit_with_lagrange(
+        blind_of_g: &Vec<E::G1Affine>,
+        bck_2: &Vec<E::G1Affine>,
+        committed_witness: Vec<E::Fr>,
+        opening: Vec<E::Fr>
+    ) -> Result<Commitment<E>, Error> {
+        assert_eq!(blind_of_g.len(), opening.len(), "Opening length does not match the exepcted blinding factors");
+
+        let pd_cm_1 = VariableBaseMSM::multi_scalar_mul(
+            blind_of_g, // [zH(X), XzH(X)]
+            &convert_to_bigints(opening.as_slice()).as_slice()
+        ).into_affine();
+
+        let n = committed_witness.len();
+        assert_eq!(bck_2[..n].len(), committed_witness.len(), "Committed-witness length does not match the exepcted blinding factors");
+
+        let pd_cm_2 = VariableBaseMSM::multi_scalar_mul(
+            &bck_2[..n], // [L2(X) .. Ln(X)]
+            &convert_to_bigints(committed_witness.as_slice()).as_slice(),
+        ).into_affine();
+
+        let pd_cm = pd_cm_1 + pd_cm_2;
+
+        Ok(Commitment(pd_cm.into()))
+    }
+
+    /// Outputs a batched commitment.
+    pub fn test_batched_commit(
+        bck_1: &Vec<E::G1Affine>,
+        batched_committed_witness: Vec<E::Fr>,
+    ) -> Result<Commitment<E>, Error> {
+        assert_eq!(bck_1.len(), batched_committed_witness.len(), "Batched committed-witness length does not match the exepcted blinding factors");
+    
+        let bcm = VariableBaseMSM::multi_scalar_mul(
+            bck_1, // [zH(X), XzH(X)]
+            &convert_to_bigints(batched_committed_witness.as_slice()).as_slice()
+        ).into_affine();
+
+
+        Ok(Commitment(bcm.into()))
     }
 
     /// Compute witness polynomial.
@@ -429,25 +472,26 @@ where
     }
 }
 
-fn skip_leading_zeros_and_convert_to_bigints<F: PrimeField, P: UVPolynomial<F>>(
-    p: &P,
-) -> (usize, Vec<F::BigInt>) {
-    let mut num_leading_zeros = 0;
-    while num_leading_zeros < p.coeffs().len() && p.coeffs()[num_leading_zeros].is_zero() {
-        num_leading_zeros += 1;
-    }
-    let coeffs = convert_to_bigints(&p.coeffs()[num_leading_zeros..]);
-    (num_leading_zeros, coeffs)
-}
+// fn skip_leading_zeros_and_convert_to_bigints<F: PrimeField, P: UVPolynomial<F>>(
+//     p: &P,
+// ) -> (usize, Vec<F::BigInt>) {
+//     let mut num_leading_zeros = 0;
+//     while num_leading_zeros < p.coeffs().len() && p.coeffs()[num_leading_zeros].is_zero() {
+//         num_leading_zeros += 1;
+//     }
+//     let coeffs = convert_to_bigints(&p.coeffs()[num_leading_zeros..]);
+//     (num_leading_zeros, coeffs)
+// }
 
-fn convert_to_bigints<F: PrimeField>(p: &[F]) -> Vec<F::BigInt> {
-    let to_bigint_time = start_timer!(|| "Converting polynomial coeffs to bigints");
-    let coeffs = ark_std::cfg_iter!(p)
-        .map(|s| s.into_repr())
-        .collect::<Vec<_>>();
-    end_timer!(to_bigint_time);
-    coeffs
-}
+// fn convert_to_bigints<F: PrimeField>(p: &[F]) -> Vec<F::BigInt> {
+//     let to_bigint_time = start_timer!(|| "Converting polynomial coeffs to bigints");
+//     let coeffs = ark_std::cfg_iter!(p)
+//         .map(|s| s.into_repr())
+//         .collect::<Vec<_>>();
+//     end_timer!(to_bigint_time);
+//     coeffs
+// }
+
 
 #[cfg(test)]
 mod tests {

@@ -1,6 +1,6 @@
 use crate::poly_commit::kzg10;
 use crate::poly_commit::{
-    BTreeMap, PCCommitterKey, PCPreparedCommitment, PCPreparedVerifierKey, PCVerifierKey, Vec,
+    BTreeMap, PCCommitterKey, PCPreparedCommitment, PCPreparedVerifierKey, PCVerifierKey, Vec,PCBatchCommitterKey
 };
 use ark_ec::{PairingEngine, ProjectiveCurve};
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize, SerializationError};
@@ -121,6 +121,30 @@ impl<E: PairingEngine> PCCommitterKey for CommitterKey<E> {
     }
 }
 
+/// `BatchCommitterKey` is used to generate a batched commitment.
+#[derive(Derivative)]
+#[derivative(Default(bound = ""), Clone(bound = ""), Debug(bound = ""))]
+pub struct BatchCommitterKey<E: PairingEngine> {
+    /// Domain size
+    pub circuit_bound: usize,
+
+    /// For a batched commitment
+    pub bck_1: Vec<E::G1Affine>,
+
+    /// For proof-dependent commitment
+    pub bck_2: Vec<E::G1Affine>,
+
+    /// For blinding factors
+    pub blind_of_g: Vec<E::G1Affine>,
+}
+
+impl<E: PairingEngine> PCBatchCommitterKey for BatchCommitterKey<E> {
+    fn circuit_bound(&self) -> usize{
+        self.circuit_bound
+    }
+}
+
+
 /// `VerifierKey` is used to check evaluation proofs for a given commitment.
 #[derive(Derivative)]
 #[derivative(Default(bound = ""), Clone(bound = ""), Debug(bound = ""))]
@@ -154,7 +178,12 @@ pub struct VerifierKey<E: PairingEngine> {
     /// The maximum degree supported by the `UniversalParams` `self` was derived
     /// from.
     pub max_degree: usize,
+
+    /// Lagrange Basis
+    pub lagrange_basis_of_g: Vec<E::G1Affine>
 }
+
+
 
 impl<E: PairingEngine> VerifierKey<E> {
     /// Find the appropriate shift for the degree bound.
@@ -238,6 +267,8 @@ impl<E: PairingEngine> CanonicalDeserialize for VerifierKey<E> {
         let prepared_h = E::G2Prepared::from(h.clone());
         let prepared_beta_h = E::G2Prepared::from(beta_h.clone());
 
+        let lagrange_basis_of_g = Vec::<E::G1Affine>::deserialize(&mut reader)?;
+
         Ok(Self {
             g,
             gamma_g,
@@ -248,6 +279,7 @@ impl<E: PairingEngine> CanonicalDeserialize for VerifierKey<E> {
             degree_bounds_and_neg_powers_of_h,
             supported_degree,
             max_degree,
+            lagrange_basis_of_g
         })
     }
 
@@ -264,6 +296,8 @@ impl<E: PairingEngine> CanonicalDeserialize for VerifierKey<E> {
         let prepared_h = E::G2Prepared::from(h.clone());
         let prepared_beta_h = E::G2Prepared::from(beta_h.clone());
 
+        let lagrange_basis_of_g = Vec::<E::G1Affine>::deserialize_uncompressed(&mut reader)?;
+
         Ok(Self {
             g,
             gamma_g,
@@ -274,6 +308,7 @@ impl<E: PairingEngine> CanonicalDeserialize for VerifierKey<E> {
             degree_bounds_and_neg_powers_of_h,
             supported_degree,
             max_degree,
+            lagrange_basis_of_g
         })
     }
 
@@ -290,6 +325,8 @@ impl<E: PairingEngine> CanonicalDeserialize for VerifierKey<E> {
         let prepared_h = E::G2Prepared::from(h.clone());
         let prepared_beta_h = E::G2Prepared::from(beta_h.clone());
 
+        let lagrange_basis_of_g = Vec::<E::G1Affine>::deserialize_unchecked(&mut reader)?;
+
         Ok(Self {
             g,
             gamma_g,
@@ -300,6 +337,7 @@ impl<E: PairingEngine> CanonicalDeserialize for VerifierKey<E> {
             degree_bounds_and_neg_powers_of_h,
             supported_degree,
             max_degree,
+            lagrange_basis_of_g
         })
     }
 }

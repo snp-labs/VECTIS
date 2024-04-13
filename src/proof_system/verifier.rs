@@ -8,17 +8,14 @@
 
 //use crate::circuit::EmbeddedCurve;
 use crate::{
-    commitment::HomomorphicCommitment,
-    constraint_system::StandardComposer,
-    error::Error,
-    proof_system::{widget::VerifierKey as PlonkVerifierKey, Proof},
+    commitment::HomomorphicCommitment, constraint_system::StandardComposer, error::Error, poly_commit::PCCommitment, proof_system::{widget::VerifierKey as PlonkVerifierKey, Proof}
 };
 use ark_ec::TEModelParameters;
 use ark_ff::PrimeField;
 use core::marker::PhantomData;
 use merlin::Transcript;
 
-use super::pi::PublicInputs;
+use super::{pd_cm::{self, PDCommitment}, pi::PublicInputs};
 
 /// Abstraction structure designed verify [`Proof`]s.
 pub struct Verifier<F, P, PC>
@@ -113,6 +110,26 @@ where
             public_inputs,
         )
     }
+
+    /// Verify a 
+    pub fn batched_pedersen_verify(
+        &self,
+        proof: &Proof<F, PC>,
+        pd_cm: &PDCommitment<F, PC>,
+        cm_list: Vec<PC::Commitment>,
+        pc_batched_commit_key: &PC::BatchCommitterKey,
+        pc_verifier_key: &PC::VerifierKey,
+        public_inputs: &PublicInputs<F>
+    ) -> Result<(), Error> {
+        proof.verify::<P>(
+            self.verifier_key.as_ref().unwrap(),
+            &mut self.preprocessed_transcript.clone(),
+            pc_verifier_key,
+            public_inputs,
+        )
+    }
+
+    
 }
 
 impl<F, P, PC> Default for Verifier<F, P, PC>

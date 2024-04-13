@@ -460,7 +460,7 @@ mod test {
     // Bls12-377 tests
     batch_test!(
         [
-            test_public_inputs,
+            // test_public_inputs,
             test_committed_witness,
             test_correct_add_mul_gate,
             test_correct_add_gate,

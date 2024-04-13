@@ -59,7 +59,7 @@ where
         gadget(prover.mut_cs());
 
         // Commit Key
-        let (ck, _) = PC::trim(&universal_params, prover.circuit_bound() + 6, 0, None)
+        let (ck, bck, _) = PC::trim(&universal_params, prover.circuit_bound() + 6, prover.circuit_bound(), 0, None)
             .map_err(to_pc_error::<F, PC>)?;
 
         // let (ck, _) =
@@ -74,7 +74,7 @@ where
         let public_inputs = prover.cs.get_pi().clone();
 
         // Compute Proof
-        (prover.prove(&ck)?, public_inputs)
+        (prover.prove(&bck,&ck)?, public_inputs)
     };
     // Verifiers view
     //
@@ -91,7 +91,7 @@ where
     // let (ck, vk) =
     //     PC::trim(&universal_params, verifier.circuit_bound(), 0, None)
     //         .map_err(to_pc_error::<F, PC>)?;
-    let (ck, vk) = PC::trim(&universal_params, verifier.circuit_bound() + 6, 0, None)
+    let (ck, bck, vk) = PC::trim(&universal_params, verifier.circuit_bound() + 6, verifier.circuit_bound(),0, None)
         .map_err(to_pc_error::<F, PC>)?;
 
     // Preprocess circuit

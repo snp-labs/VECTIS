@@ -82,7 +82,7 @@ where
 /// use plonk_core::constraint_system::StandardComposer;
 /// use plonk_core::error::{to_pc_error,Error};
 /// use ark_poly::polynomial::univariate::DensePolynomial;
-/// use crate::poly_commit::{PolynomialCommitment, sonic_pc::SonicKZG10};
+/// use plonk_core::poly_commit::{PolynomialCommitment, sonic_pc::SonicKZG10};
 /// use plonk_core::prelude::*;
 /// use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 /// use num_traits::{Zero, One};
@@ -228,7 +228,7 @@ where
         // Setup PublicParams
         // let circuit_size = self.padded_circuit_size();
         let circuit_size = self.padded_circuit_size() + 6;
-        let (ck, _) = PC::trim(u_params, circuit_size, 0, None).map_err(to_pc_error::<F, PC>)?;
+        let (ck,_, _) = PC::trim(u_params, circuit_size, self.padded_circuit_size(), 0, None).map_err(to_pc_error::<F, PC>)?;
 
         //Generate & save `ProverKey` with some random values.
         let mut prover = Prover::<F, P, PC>::new(b"CircuitCompilation");
@@ -268,7 +268,7 @@ where
     {
         // let circuit_size = self.padded_circuit_size();
         let circuit_size = self.padded_circuit_size() + 6;
-        let (ck, _) = PC::trim(u_params, circuit_size, 0, None).map_err(to_pc_error::<F, PC>)?;
+        let (ck, bck, _) = PC::trim(u_params, circuit_size, self.padded_circuit_size(), 0, None).map_err(to_pc_error::<F, PC>)?;
         // New Prover instance
         let mut prover = Prover::new(transcript_init);
         // Fill witnesses for Prover
@@ -278,7 +278,7 @@ where
         let pi = prover.cs.get_pi().clone();
         let cw = prover.cs.get_cw().clone();
 
-        Ok((prover.prove(&ck)?.0, pi, cw))
+        Ok((prover.prove(&bck,&ck)?.0, pi, cw))
     }
 
     /// Returns the Circuit size padded to the next power of two.
@@ -302,8 +302,9 @@ where
     let mut verifier: Verifier<F, P, PC> = Verifier::new(transcript_init);
     // let padded_circuit_size = plonk_verifier_key.padded_circuit_size();
     let padded_circuit_size = plonk_verifier_key.padded_circuit_size() + 6;
-    verifier.verifier_key = Some(plonk_verifier_key);
-    let (_, vk) = PC::trim(u_params, padded_circuit_size, 0, None).map_err(to_pc_error::<F, PC>)?;
+    verifier.verifier_key = Some(plonk_verifier_key.clone());
+    let (_, _, vk) = 
+        PC::trim(u_params, padded_circuit_size,plonk_verifier_key.padded_circuit_size(), 0, None).map_err(to_pc_error::<F, PC>)?;
 
     verifier.verify(proof, &vk, public_inputs)
 }

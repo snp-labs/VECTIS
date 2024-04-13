@@ -23,8 +23,6 @@ use ark_poly::{
 use core::marker::PhantomData;
 use merlin::Transcript;
 
-use super::aux::BatchCommitKey;
-
 /// Struct that contains all of the selector and permutation [`Polynomial`]s in
 /// PLONK.
 ///
@@ -248,7 +246,6 @@ where
             widget::VerifierKey<F, PC>,
             SelectorPolynomials<F>,
             GeneralEvaluationDomain<F>,
-            // BatchCommitKey<F, PC>
         ),
         Error,
     >
@@ -372,35 +369,8 @@ where
         let (ck_vec, _) =
             PC::commit(commit_key, ck_poly.iter(), None).map_err(to_pc_error::<F, PC>)?;
 
-        // Ok((verifier_key, selectors, domain, BatchCommitKey {
-        //     ck: ck_vec
-        // }))
         Ok((verifier_key, selectors, domain))
     }
-
-    // pub fn compute_lagrange_basis_commitments<PC>(&mut self, commit_key: &PC::CommitterKey)
-    //     where PC: HomomorphicCommitment<F>
-    // {
-    //     todo!()
-    //     // let n = commit_key.;
-    //     // assert!(is_pow_2(n));
-
-    //     // let domain = GeneralEvaluationDomain::<C::ScalarField>::new(n).unwrap();
-    //     // let n_inv = domain.size_as_field_element().inverse().unwrap();
-
-    //     // let tau_projective: Vec<C::Group> = tau_powers
-    //     //     .iter()
-    //     //     .map(|tau_pow_i| tau_pow_i.into_group())
-    //     //     .collect();
-    //     // let p_evals: Vec<C::Group> = domain.fft(&tau_projective);
-    //     // let p_evals_reversed = iter::once(p_evals[0]).chain(p_evals.into_iter().skip(1).rev());
-
-    //     // let mut ls: Vec<C::Group> = p_evals_reversed
-    //     //     .into_iter()
-    //     //     .map(|pi| pi.mul(n_inv))
-    //     //     .collect();
-    //     // C::Group::normalize_batch(&mut ls)
-    // }
 }
 
 /// Given that the domain size is `D`

@@ -29,6 +29,10 @@ use super::*;
 pub mod data_structures;
 pub use data_structures::*;
 
+/// Util
+pub mod util;
+pub use util::*;
+
 /// R1CS constraints for polynomial constraints.
 #[cfg(feature = "r1cs")]
 mod constraints;
@@ -100,11 +104,11 @@ pub trait PolynomialCommitment<F: Field, P: Polynomial<F>>: Sized {
     /// The prepared verifier key for the scheme; used to check an evaluation proof.
     type PreparedVerifierKey: PCPreparedVerifierKey<Self::VerifierKey> + Clone;
     /// The commitment to a polynomial.
-    type Commitment: PCCommitment + Default;
+    type Commitment: PCCommitment + Default + Debug;
     /// The prepared commitment to a polynomial.
     type PreparedCommitment: PCPreparedCommitment<Self::Commitment>;
     /// The commitment randomness.
-    type Randomness: PCRandomness;
+    type Randomness: PCRandomness + Debug;
     /// The evaluation proof for a single point.
     type Proof: PCProof + Clone;
     /// The evaluation proof for a query set.
@@ -113,6 +117,10 @@ pub trait PolynomialCommitment<F: Field, P: Polynomial<F>>: Sized {
         + Into<Vec<Self::Proof>>
         + CanonicalSerialize
         + CanonicalDeserialize;
+
+    /// The committer key for batching commitments
+    type BatchCommitterKey: PCBatchCommitterKey;
+
     /// The error type for the scheme.
     type Error: ark_std::error::Error + From<Error>;
 
@@ -130,9 +138,10 @@ pub trait PolynomialCommitment<F: Field, P: Polynomial<F>>: Sized {
     fn trim(
         pp: &Self::UniversalParams,
         supported_degree: usize,
+        circuit_bound: usize,
         supported_hiding_bound: usize,
         enforced_degree_bounds: Option<&[usize]>,
-    ) -> Result<(Self::CommitterKey, Self::VerifierKey), Self::Error>;
+    ) -> Result<(Self::CommitterKey, Self::BatchCommitterKey, Self::VerifierKey), Self::Error>;
 
     /// Outputs a commitments to `polynomials`. If `polynomials[i].is_hiding()`,
     /// then the `i`-th commitment is hiding up to `polynomials.hiding_bound()` queries.
@@ -156,6 +165,21 @@ pub trait PolynomialCommitment<F: Field, P: Polynomial<F>>: Sized {
     >
     where
         P: 'a;
+
+    /// Outputs a proof-dependent commitment to `committed_witness`
+    fn proof_dep_commit<'a>(
+        bck: &Self::BatchCommitterKey,
+        committed_witness: Vec<F>,
+        opening: Vec<F>
+    ) -> Result<LabeledCommitment<Self::Commitment>, Self::Error>;
+
+
+    /// Outputs a batched commitment to `batched committed_witness`
+    fn test_batched_commit<'a>(
+        bck: &Self::BatchCommitterKey,
+        batched_committed_witness: Vec<F>
+    ) -> Result<LabeledCommitment<Self::Commitment>, Self::Error>;
+
 
     /// On input a list of labeled polynomials and a query point, `open` outputs a proof of evaluation
     /// of the polynomials at the query point.
@@ -681,6 +705,7 @@ pub mod tests {
                 max_degree >= supported_degree,
                 "max_degree < supported_degree"
             );
+            let circuit_bound: usize = supported_degree.next_power_of_two() >> 1;
 
             let mut labels = Vec::new();
             let mut polynomials = Vec::new();
@@ -708,9 +733,12 @@ pub mod tests {
                 .unwrap_or(0);
             println!("supported degree: {:?}", supported_degree);
             println!("supported hiding bound: {:?}", supported_hiding_bound);
-            let (ck, vk) = PC::trim(
+            println!("circuit bound: {:?}", circuit_bound);
+            
+            let (ck, _, vk) = PC::trim(
                 &pp,
                 supported_degree,
+                circuit_bound,
                 supported_hiding_bound,
                 Some(degree_bounds.as_slice()),
             )?;
@@ -786,6 +814,8 @@ pub mod tests {
                 max_degree >= supported_degree,
                 "max_degree < supported_degree"
             );
+            let circuit_bound: usize = core::cmp::max(supported_degree.next_power_of_two() >> 1, 1);
+
             let mut polynomials: Vec<LabeledPolynomial<F, P>> = Vec::new();
             let mut degree_bounds = if enforce_degree_bounds {
                 Some(Vec::new())
@@ -832,9 +862,11 @@ pub mod tests {
             println!("supported degree: {:?}", supported_degree);
             println!("supported hiding bound: {:?}", supported_hiding_bound);
             println!("num_points_in_query_set: {:?}", num_points_in_query_set);
-            let (ck, vk) = PC::trim(
+            println!("circuit bound: {:?}", circuit_bound);
+            let (ck, _, vk) = PC::trim(
                 &pp,
                 supported_degree,
+                circuit_bound,
                 supported_hiding_bound,
                 degree_bounds.as_ref().map(|s| s.as_slice()),
             )?;
@@ -923,6 +955,8 @@ pub mod tests {
                 max_degree >= supported_degree,
                 "max_degree < supported_degree"
             );
+            let circuit_bound: usize = core::cmp::max(supported_degree.next_power_of_two() >> 1, 1);
+
             let mut polynomials = Vec::new();
             let mut degree_bounds = if enforce_degree_bounds {
                 Some(Vec::new())
@@ -972,9 +1006,11 @@ pub mod tests {
             println!("{}", num_polynomials);
             println!("{}", enforce_degree_bounds);
 
-            let (ck, vk) = PC::trim(
+            let (ck, _,  vk) = PC::trim(
                 &pp,
+                // supported_degree + 6,
                 supported_degree,
+                circuit_bound,
                 supported_degree,
                 degree_bounds.as_ref().map(|s| s.as_slice()),
             )?;

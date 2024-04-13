@@ -3,6 +3,7 @@ use crate::poly_commit::{kzg10, sonic_pc::SonicKZG10, PolynomialCommitment};
 use ark_ec::{msm::VariableBaseMSM, PairingEngine};
 use ark_ff::{Field, PrimeField};
 use ark_poly::univariate::DensePolynomial;
+use crate::ark_std::Zero;
 
 /// A homomorphic polynomial commitment
 pub trait HomomorphicCommitment<F>: PolynomialCommitment<F, DensePolynomial<F>>
@@ -12,6 +13,9 @@ where
 {
     /// Combine a linear combination of homomorphic commitments
     fn multi_scalar_mul(commitments: &[Self::Commitment], scalars: &[F]) -> Self::Commitment;
+
+    /// Aggregate multiple commitments
+    fn agg(commitments: &[Self::Commitment]) -> Self::Commitment;
 }
 
 /// The Default KZG-style commitment scheme
@@ -40,6 +44,17 @@ where
         kzg10::Commitment::<E>(
             VariableBaseMSM::multi_scalar_mul(&points_repr, &scalars_repr).into(),
         )
+    }
+
+    fn agg(commitments: &[Self::Commitment]) -> KZG10Commitment<E> {
+        let points_repr = commitments.iter().map(|c| c.0).collect::<Vec<_>>();
+        let mut ret = E::G1Affine::zero();
+
+        for i in 0..points_repr.len() {
+            ret = ret + points_repr[i];
+        }
+
+        kzg10::Commitment(ret.into())
     }
 }
 

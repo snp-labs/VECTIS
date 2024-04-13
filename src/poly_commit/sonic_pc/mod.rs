@@ -1,4 +1,4 @@
-use crate::poly_commit::{kzg10, PCCommitterKey};
+use crate::poly_commit::{ compute_blind_basis, compute_lagrange_basis, kzg10, PCCommitterKey};
 use crate::poly_commit::{BTreeMap, BTreeSet, String, ToString, Vec};
 use crate::poly_commit::{BatchLCProof, Error, Evaluations, QuerySet, UVPolynomial};
 use crate::poly_commit::{LabeledCommitment, LabeledPolynomial, LinearCombination};
@@ -144,6 +144,7 @@ where
     type Randomness = Randomness<E::Fr, P>;
     type Proof = kzg10::Proof<E>;
     type BatchProof = Vec<Self::Proof>;
+    type BatchCommitterKey = BatchCommitterKey<E>;
     type Error = Error;
 
     fn setup<R: RngCore>(
@@ -157,14 +158,20 @@ where
     fn trim(
         pp: &Self::UniversalParams,
         supported_degree: usize,
+        circuit_bound: usize,
         supported_hiding_bound: usize,
         enforced_degree_bounds: Option<&[usize]>,
-    ) -> Result<(Self::CommitterKey, Self::VerifierKey), Self::Error> {
+    ) -> Result<(Self::CommitterKey, Self::BatchCommitterKey, Self::VerifierKey), Self::Error> {
         let trim_time = start_timer!(|| "Trimming public parameters");
         let neg_powers_of_h = &pp.neg_powers_of_h;
         let max_degree = pp.max_degree();
+
         if supported_degree > max_degree {
             return Err(Error::TrimmingDegreeTooLarge);
+        }
+
+        if circuit_bound.is_power_of_two() == false {
+            return Err(Error::InvalidCircuitBound);
         }
 
         let enforced_degree_bounds = enforced_degree_bounds.map(|bounds| {
@@ -245,6 +252,20 @@ where
             max_degree,
         };
 
+        let trimed_power_of_g = &pp.clone().powers_of_g[..circuit_bound];
+        let lagrange_basis_of_g = compute_lagrange_basis(&trimed_power_of_g.to_vec());
+
+        let bck_1 = lagrange_basis_of_g.get(4..6).map_or_else(|| Vec::new(), |slice| slice.to_vec());
+        let bck_2 = lagrange_basis_of_g.get(6..).map_or_else(|| Vec::new(), |slice| slice.to_vec());
+        let blind_of_g = compute_blind_basis(circuit_bound, &pp.clone().powers_of_g);
+
+        let bck = BatchCommitterKey {
+            circuit_bound,
+            bck_1,
+            bck_2,
+            blind_of_g,
+        };
+
         let g = pp.powers_of_g[0];
         let h = pp.h;
         let beta_h = pp.beta_h;
@@ -262,10 +283,11 @@ where
             degree_bounds_and_neg_powers_of_h,
             supported_degree,
             max_degree,
+            lagrange_basis_of_g
         };
 
         end_timer!(trim_time);
-        Ok((ck, vk))
+        Ok((ck, bck, vk))
     }
 
     /// Outputs a commitment to `polynomial`.
@@ -333,6 +355,43 @@ where
 
         end_timer!(commit_time);
         Ok((labeled_comms, randomness))
+    }
+
+    fn proof_dep_commit<'a>(
+            bck: &Self::BatchCommitterKey,
+            committed_witness: Vec<E::Fr>,
+            opening: Vec<E::Fr>
+        ) -> Result<LabeledCommitment<Self::Commitment>, Self::Error> {
+        let _time = start_timer!(|| "Generate a proof-dependent commitment");
+        let label = "proof-dependent commitment";
+        let pd_cm = kzg10::KZG10::<E, P>::commit_with_lagrange(&bck.blind_of_g, &bck.bck_2, committed_witness, opening)?;
+        
+        let labeled_pd_cm = LabeledCommitment::new(
+            label.to_string(),
+            pd_cm,
+            None
+        );
+        end_timer!(_time);
+
+        Ok(labeled_pd_cm)
+    }
+
+    fn test_batched_commit<'a>(
+            bck: &Self::BatchCommitterKey,
+            batched_committed_witness: Vec<E::Fr>
+        ) -> Result<LabeledCommitment<Self::Commitment>, Self::Error> {
+        let _time = start_timer!(|| "Generate a batched commitment");
+        let label = "batched commitment";
+        let bcm = kzg10::KZG10::<E, P>::test_batched_commit(&bck.bck_1, batched_committed_witness)?;
+        
+        let labeled_bcm = LabeledCommitment::new(
+            label.to_string(),
+            bcm,
+            None
+        );
+        end_timer!(_time);
+
+        Ok(labeled_bcm)
     }
 
     fn open_individual_opening_challenges<'a>(

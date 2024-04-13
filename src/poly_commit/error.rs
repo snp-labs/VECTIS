@@ -56,6 +56,9 @@ pub enum Error {
     /// The provided `enforced_degree_bounds` was `Some<&[]>`.
     EmptyDegreeBounds,
 
+    /// The provided `enforced_circuit_bound.
+    InvalidCircuitBound,
+
     /// The provided equation contained multiple polynomials, of which least one
     /// had a strict degree bound.
     EquationHasDegreeBounds(String),
@@ -138,6 +141,9 @@ impl core::fmt::Display for Error {
             }
             Error::EmptyDegreeBounds => {
                 write!(f, "provided `enforced_degree_bounds` was `Some<&[]>`")
+            }
+            Error::InvalidCircuitBound => {
+                write!(f, "provided `enforced_circuit_bound`")
             }
             Error::EquationHasDegreeBounds(e) =>
                 write!(f, "the eqaution \"{}\" contained degree-bounded polynomials", e),

@@ -851,8 +851,7 @@ mod test {
         P: TEModelParameters<BaseField = F>,
         PC: HomomorphicCommitment<F>,
     {
-        // let u_params = PC::setup(2 * 30, None, &mut OsRng).unwrap();
-        let u_params = PC::setup(2 * 30, None, &mut test_rng()).unwrap();
+        let u_params = PC::setup(2 << 7, None, &mut test_rng()).unwrap();
 
         // Create a prover struct
         let mut prover: Prover<F, P, PC> = Prover::new(b"demo");
@@ -861,8 +860,8 @@ mod test {
         dummy_gadget(10, prover.mut_cs());
 
         // Commit Key
-        // let (ck, vk) = PC::trim(&u_params, 2 * 20, 0, None).unwrap();
-        let (ck, vk) = PC::trim(&u_params, 2 * 20 + 6, 0, None).unwrap();
+        let (ck, bck, vk) = 
+        PC::trim(&u_params, (2 << 6) + 6, 2<<6, 0, None).unwrap();
 
         // Preprocess circuit
         prover.preprocess(&ck).unwrap();
@@ -873,7 +872,7 @@ mod test {
 
         // Compute multiple proofs
         for _ in 0..3 {
-            proofs.push(prover.prove(&ck).unwrap());
+            proofs.push(prover.prove(&bck, &ck).unwrap());
 
             // Add another witness instance
             dummy_gadget(10, prover.mut_cs());
