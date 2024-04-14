@@ -10,7 +10,6 @@ use crate::{
     constraint_system::{StandardComposer, Variable},
     error::{to_pc_error, Error},
     label_commitment, label_polynomial,
-    poly_commit::LabeledCommitment,
     proof_system::{linearisation_poly, proof::Proof, quotient_poly, ProverKey},
     transcript::TranscriptProtocol,
 };
@@ -162,7 +161,6 @@ where
 
         for i in 0..hiding_degree + 1 {
             let blinding_scalar = F::rand(rng);
-            // let blinding_scalar = F::zero();
 
             w_vec_inverse[i] = w_vec_inverse[i] - blinding_scalar;
             w_vec_inverse.push(blinding_scalar);
@@ -225,15 +223,6 @@ where
                 .commitment()
                 .clone()
         });
-
-        let bcm = cw.get(4..6).map_or(PC::Commitment::default(), |cw_slice| {
-            PC::test_batched_commit(batched_commit_key, cw_slice.to_vec())
-                .unwrap()
-                .commitment()
-                .clone()
-        });
-
-        let _cw_comm = PC::agg(vec![pd_cm.clone(), bcm].as_slice());
 
         Ok((
             BatchedProof {
@@ -375,7 +364,6 @@ where
             &w_r_poly,
             &w_o_poly,
             &w_4_poly,
-            // &cw_poly,
             &batched_proof.cw_poly,
             &pi_poly,
             &alpha,
@@ -425,7 +413,6 @@ where
             &w_r_poly,
             &w_o_poly,
             &w_4_poly,
-            // &cw_poly,
             &batched_proof.cw_poly,
             &t_i_polys[0],
             &t_i_polys[1],
@@ -538,7 +525,6 @@ where
                 saw_opening,
                 evaluations,
             },
-            // pd_cm,
             proof_dependent_cm,
         ))
     }

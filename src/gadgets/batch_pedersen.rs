@@ -79,7 +79,6 @@ mod test {
             agg = composer
                 .arithmetic_gate(|gate| gate.witness(agg, sum_var, None).add(F::one(), F::one()));
 
-            // coeff = coeff * coeff
             coeff = composer.arithmetic_gate(|gate| gate.witness(coeff, coeff, None).mul(F::one()));
 
             sz >>= 1;
@@ -191,13 +190,10 @@ mod test {
 
         let mut trans = Transcript::new(b"compute challenge");
 
-        // let rand = PC::compute_challenge(&mut trans, cm_list.as_slice(), &proof_dependent_cm.pd_cm);
         let rand = PC::compute_challenge(&mut trans, cm_list.as_slice(), &proof_dependent_cm.pd_cm);
 
         let agg_m = aggregate_vector(m_list.clone(), rand);
         let agg_o = aggregate_vector(o_list.clone(), rand);
-
-        let cm_agg = PC::test_batched_commit(&bck, vec![agg_m, agg_o]).unwrap();
 
         // Prover POV
         let (proof, pi, _cw) = {
@@ -218,7 +214,14 @@ mod test {
                 }
             }
 
-            circuit.gen_proof::<PC>(&pp, pk, Some(proof_dependent_cm.opening.clone()), b"Test")?
+            // circuit.gen_proof::<PC>(&pp, pk, Some(proof_dependent_cm.opening.clone()), b"Test")?
+            circuit.gen_proof::<PC>(
+                &pp,
+                pk,
+                Some(bck),
+                Some(proof_dependent_cm.opening.clone()),
+                b"Test",
+            )?
         };
 
         let verifier_data = VerifierData::new(vk, pi);

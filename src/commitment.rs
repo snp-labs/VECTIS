@@ -198,6 +198,7 @@ pub fn aggregate_polynomials<F: Field>(
 }
 
 /// Aggregation tree trait
+/// from 'bcc-groth16'
 pub trait AggregationTree<U> {
     /// Node type
     type Node;

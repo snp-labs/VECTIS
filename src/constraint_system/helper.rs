@@ -42,9 +42,7 @@ where
     PC: HomomorphicCommitment<F>,
 {
     // Common View
-    let universal_params =
-        // PC::setup(2 * n, None, &mut OsRng).map_err(to_pc_error::<F, PC>)?;
-        PC::setup(2 * n, None, &mut test_rng()).map_err(to_pc_error::<F, PC>)?;
+    let universal_params = PC::setup(2 * n, None, &mut test_rng()).map_err(to_pc_error::<F, PC>)?;
 
     // Provers View
     let ((proof, _), public_inputs) = {
@@ -92,9 +90,6 @@ where
     gadget(verifier.mut_cs());
 
     // Compute Commit and Verifier Key
-    // let (ck, vk) =
-    //     PC::trim(&universal_params, verifier.circuit_bound(), 0, None)
-    //         .map_err(to_pc_error::<F, PC>)?;
     let (ck, vk) = PC::trim(
         &universal_params,
         verifier.circuit_bound() + 6,
@@ -103,9 +98,6 @@ where
         None,
     )
     .map_err(to_pc_error::<F, PC>)?;
-
-    let bck = PC::generate_batched_committer_key(&universal_params, verifier.circuit_bound())
-        .map_err(to_pc_error::<F, PC>)?;
 
     // Preprocess circuit
     verifier.preprocess(&ck)?;

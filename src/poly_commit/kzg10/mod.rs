@@ -229,26 +229,6 @@ where
         Ok(Commitment(pd_cm.into()))
     }
 
-    /// Outputs a batched commitment.
-    pub fn test_batched_commit(
-        bck_1: &Vec<E::G1Affine>,
-        batched_committed_witness: Vec<E::Fr>,
-    ) -> Result<Commitment<E>, Error> {
-        assert_eq!(
-            bck_1.len(),
-            batched_committed_witness.len(),
-            "Batched committed-witness length does not match the exepcted blinding factors"
-        );
-
-        let bcm = VariableBaseMSM::multi_scalar_mul(
-            bck_1, // L4(X), L5(X)
-            &convert_to_bigints(batched_committed_witness.as_slice()).as_slice(),
-        )
-        .into_affine();
-
-        Ok(Commitment(bcm.into()))
-    }
-
     /// Compute witness polynomial.
     ///
     /// The witness polynomial w(x) the quotient of the division (p(x) - p(z)) / (x - z)

@@ -147,14 +147,13 @@ where
         let c = gate_witness.2.unwrap_or_else(|| {
             self.add_input(
                 ((gate.mul_selector
-                    * (self.variables[&gate_witness.0]
-                        * self.variables[&gate_witness.1]))
+                    * (self.variables[&gate_witness.0] * self.variables[&gate_witness.1]))
                     + gate.add_selectors.0 * self.variables[&gate_witness.0]
                     + gate.add_selectors.1 * self.variables[&gate_witness.1]
                     + gate.const_selector
                     + q4 * self.variables[&w4]
                     + gate.pi.unwrap_or_default()
-                    + gate.cw.unwrap_or_default()) // 수정함
+                    + gate.cw.unwrap_or_default())
                     * (-gate.out_selector),
             )
         });

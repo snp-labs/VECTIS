@@ -388,20 +388,6 @@ where
         Ok(label_commitment!(pd_cm))
     }
 
-    fn test_batched_commit<'a>(
-        bck: &Self::BatchCommitterKey,
-        batched_committed_witness: Vec<E::Fr>,
-    ) -> Result<LabeledCommitment<Self::Commitment>, Self::Error> {
-        let _time = start_timer!(|| "Generate a batched commitment");
-        let label = "batched commitment";
-        let bcm = kzg10::KZG10::<E, P>::test_batched_commit(&bck.bck_1, batched_committed_witness)?;
-
-        let labeled_bcm = LabeledCommitment::new(label.to_string(), bcm, None);
-        end_timer!(_time);
-
-        Ok(labeled_bcm)
-    }
-
     fn open_individual_opening_challenges<'a>(
         ck: &Self::CommitterKey,
         labeled_polynomials: impl IntoIterator<Item = &'a LabeledPolynomial<E::Fr, P>>,

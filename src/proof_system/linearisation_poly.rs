@@ -67,39 +67,6 @@ where
     pub permutation_eval: F,
 }
 
-// Probably all of these should go into CustomEvals
-#[derive(CanonicalDeserialize, CanonicalSerialize, derivative::Derivative)]
-#[derivative(Clone, Debug, Default, Eq, PartialEq)]
-pub struct LookupEvaluations<F>
-where
-    F: Field,
-{
-    pub q_lookup_eval: F,
-    // (Shifted) Evaluation of the lookup permutation polynomial at `z * root
-    // of unity`
-    pub z2_next_eval: F,
-
-    /// Evaluations of the first half of sorted plonkup poly at `z`
-    pub h1_eval: F,
-
-    /// (Shifted) Evaluations of the even indexed half of sorted plonkup poly
-    /// at `z root of unity
-    pub h1_next_eval: F,
-
-    /// Evaluations of the odd indexed half of sorted plonkup poly at `z
-    /// root of unity
-    pub h2_eval: F,
-
-    /// Evaluations of the query polynomial at `z`
-    pub f_eval: F,
-
-    /// Evaluations of the table polynomial at `z`
-    pub table_eval: F,
-
-    /// Evaluations of the table polynomial at `z * root of unity`
-    pub table_next_eval: F,
-}
-
 /// Subset of the [`ProofEvaluations`]. Evaluations at `z`  or `z *w` where `w`
 /// is the nth root of unity of selectors polynomials needed for custom gates
 #[derive(CanonicalDeserialize, CanonicalSerialize, derivative::Derivative)]

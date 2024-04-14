@@ -180,12 +180,6 @@ pub trait PolynomialCommitment<F: Field, P: Polynomial<F>>: Sized {
         opening: Vec<F>,
     ) -> Result<LabeledCommitment<Self::Commitment>, Self::Error>;
 
-    /// Outputs a batched commitment to `batched committed_witness`
-    fn test_batched_commit<'a>(
-        bck: &Self::BatchCommitterKey,
-        batched_committed_witness: Vec<F>,
-    ) -> Result<LabeledCommitment<Self::Commitment>, Self::Error>;
-
     /// On input a list of labeled polynomials and a query point, `open` outputs a proof of evaluation
     /// of the polynomials at the query point.
     fn open<'a>(
@@ -747,7 +741,6 @@ pub mod tests {
                 supported_hiding_bound,
                 Some(degree_bounds.as_slice()),
             )?;
-            println!("Trimmed");
 
             let (comms, rands) = PC::commit(&ck, &polynomials, Some(rng))?;
 
@@ -759,7 +752,6 @@ pub mod tests {
                 let value = polynomials[i].evaluate(&point);
                 values.insert((label.clone(), point.clone()), value);
             }
-            println!("Generated query set");
 
             let opening_challenge = F::rand(rng);
             let proof = PC::batch_open(

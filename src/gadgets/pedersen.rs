@@ -1,15 +1,3 @@
-// use crate::{
-//     commitment::HomomorphicCommitment,
-//     error::{to_pc_error, Error},
-//     prelude::StandardComposer,
-//     proof_system::{
-//         cw::CommittedWitness, pi::PublicInputs, Proof, Prover, ProverKey, Verifier, VerifierKey,
-//     },
-// };
-// use ark_ec::models::TEModelParameters;
-// use ark_ff::PrimeField;
-// use ark_serialize::*;
-
 #[cfg(test)]
 mod test {
     const N: usize = 4;
@@ -138,7 +126,7 @@ mod test {
                 }
             }
 
-            circuit.gen_proof::<PC>(&pp, pk, None, b"Test")?
+            circuit.gen_proof::<PC>(&pp, pk, None, None, b"Test")?
         };
 
         let verifier_data = VerifierData::new(vk, pi);

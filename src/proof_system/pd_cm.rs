@@ -7,7 +7,6 @@ use crate::commitment::HomomorphicCommitment;
 use ark_ff::PrimeField;
 use ark_poly::univariate::DensePolynomial;
 
-
 /// Proof-dependent commitment
 #[derive(Debug, Clone)]
 pub struct PDCommitment<F: PrimeField, PC: HomomorphicCommitment<F>> {
@@ -15,7 +14,7 @@ pub struct PDCommitment<F: PrimeField, PC: HomomorphicCommitment<F>> {
     pub(crate) pd_cm: PC::Commitment,
 
     /// The opening of the commitment
-    pub(crate) opening: Vec<F>,
+    pub opening: Vec<F>,
 }
 
 impl<F, PC> PDCommitment<F, PC>

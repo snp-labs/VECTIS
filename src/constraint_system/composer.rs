@@ -551,22 +551,15 @@ where
             self.w_o.push(rand_var_3);
             self.w_4.push(rand_var_4);
 
-            // let opening_s = F::rand(rng);
-            // self.add_cw(self.n, &opening_s).unwrap_or_else(|_| {
-            //     panic!("Could not insert CW {:?} at {}", opening_s, self.n)
-            // });
-
             // All selectors fixed to 0 so that the constraints are satisfied
             self.q_m.push(F::zero());
             self.q_l.push(F::zero());
             self.q_r.push(F::zero());
             self.q_o.push(F::zero());
             self.q_c.push(F::zero());
-            // self.q_c.push(-opening_s);
 
             self.q_4.push(F::zero());
             self.q_arith.push(F::zero());
-            // self.q_arith.push(F::one());
             self.q_fixed_group_add.push(F::zero());
             self.q_variable_group_add.push(F::zero());
 

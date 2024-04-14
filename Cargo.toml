@@ -1,9 +1,8 @@
 [package]
-name = "plonk-core"
+name = "batch-cc-plonk"
 version = "0.1.0"
-authors = ["ZK-GARAGE Authors"]
+authors = ["ZK-GARAGE Authors", "kwonhojeong@hanyang.ac.kr"]
 readme = "README.md"
-repository = "https://github.com/zk-garage/plonk"
 keywords = ["cryptography", "plonk", "zk-snarks", "zero-knowledge", "crypto"]
 categories = ["algorithms", "cryptography", "science"]
 description = "A pure-Rust implementation of the PLONK ZK-Proof algorithm."
@@ -30,6 +29,8 @@ default = [
 # Raw Assembly
 asm = ["ark-ff/asm"]
 
+print-trace = ["ark-std/print-trace"]
+
 # Parallelism Features
 parallel = [
     "ark-ec/parallel",
@@ -49,7 +50,7 @@ std = [
 trace = []
 
 # Tracing Printing Features
-trace-print = ["trace", "std"]
+trace-print = ["trace", "std", ]
 
 [dependencies]
 ark-bls12-381 = "0.3"

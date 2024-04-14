@@ -79,12 +79,12 @@ where
 ///     EdwardsProjective as JubJubProjective, Fr as JubJubScalar,
 /// };
 /// use ark_ff::{FftField, PrimeField, BigInteger, ToConstraintField};
-/// use plonk_core::circuit::{Circuit, verify_proof};
-/// use plonk_core::constraint_system::StandardComposer;
-/// use plonk_core::error::{to_pc_error,Error};
+/// use batch_cc_plonk::circuit::{Circuit, verify_proof};
+/// use batch_cc_plonk::constraint_system::StandardComposer;
+/// use batch_cc_plonk::error::{to_pc_error,Error};
 /// use ark_poly::polynomial::univariate::DensePolynomial;
-/// use plonk_core::poly_commit::{PolynomialCommitment, sonic_pc::SonicKZG10};
-/// use plonk_core::prelude::*;
+/// use batch_cc_plonk::poly_commit::{PolynomialCommitment, sonic_pc::SonicKZG10};
+/// use batch_cc_plonk::prelude::*;
 /// use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 /// use num_traits::{Zero, One};
 /// use rand_core::OsRng;
@@ -180,7 +180,7 @@ where
 ///         e: JubJubScalar::from(2u64),
 ///         f: point_f_pi,
 ///     };
-///     circuit.gen_proof::<PC>(&pp, pk_p, None, b"Test")
+///     circuit.gen_proof::<PC>(&pp, pk_p, None, None, b"Test")
 /// }?;
 ///
 /// let verifier_data = VerifierData::new(vk, pi);
@@ -276,6 +276,7 @@ where
         &mut self,
         u_params: &PC::UniversalParams,
         prover_key: ProverKey<F>,
+        batched_committer_key: Option<PC::BatchCommitterKey>,
         opening: Option<Vec<F>>,
         transcript_init: &'static [u8],
     ) -> Result<(Proof<F, PC>, PublicInputs<F>, CommittedWitness<F>), Error>
@@ -284,13 +285,16 @@ where
         P: TEModelParameters<BaseField = F>,
         PC: HomomorphicCommitment<F>,
     {
-        // let circuit_size = self.padded_circuit_size();
         let circuit_size = self.padded_circuit_size() + 6;
         let (ck, _) = PC::trim(u_params, circuit_size, self.padded_circuit_size(), 0, None)
             .map_err(to_pc_error::<F, PC>)?;
 
-        let bck = PC::generate_batched_committer_key(u_params, self.padded_circuit_size())
-            .map_err(to_pc_error::<F, PC>)?;
+        let bck = match batched_committer_key {
+            Some(bck) => bck,
+            None => PC::generate_batched_committer_key(u_params, self.padded_circuit_size())
+                .map_err(to_pc_error::<F, PC>)?,
+        };
+
         // New Prover instance
         let mut prover = Prover::new(transcript_init);
         // Fill witnesses for Prover
@@ -441,7 +445,6 @@ mod test {
         VerifierData<F, PC>: PartialEq,
     {
         // Generate CRS
-        // let pp = PC::setup(1 << 10, None, &mut OsRng)
         let pp = PC::setup(1 << 10, None, &mut test_rng()).map_err(to_pc_error::<F, PC>)?;
 
         let mut circuit = TestCircuit::<F, P>::default();
@@ -474,7 +477,7 @@ mod test {
                 }
             }
 
-            circuit.gen_proof::<PC>(&pp, pk, None, b"Test")?
+            circuit.gen_proof::<PC>(&pp, pk, None, None, b"Test")?
         };
 
         let verifier_data = VerifierData::new(vk, pi);

@@ -39,9 +39,9 @@ pub fn compute_lagrange_basis<C: AffineCurve>(powers_of_g: &Vec<C>) -> Vec<C> {
 /// Compute commitment key for blinding factors
 pub fn compute_blind_basis<C: AffineCurve>(n: usize, powers_of_g: &Vec<C>) -> Vec<C> {
     let domain = GeneralEvaluationDomain::<C::ScalarField>::new(n)
-    .ok_or(crate::error::Error::InvalidEvalDomainSize { 
+    .ok_or(crate::error::Error::InvalidEvalDomainSize {
         log_size_of_group: n.trailing_zeros(),
-        adicity: <<C::ScalarField as ark_ff::FftField>::FftParams as ark_ff::FftParameters>::TWO_ADICITY 
+        adicity: <<C::ScalarField as ark_ff::FftField>::FftParams as ark_ff::FftParameters>::TWO_ADICITY
     }).unwrap();
 
     let mut blind_of_g = Vec::new();

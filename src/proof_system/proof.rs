@@ -249,8 +249,6 @@ where
 
         let cw_comm = cw_comm.unwrap_or(self.cw_comm.clone());
 
-        println!("verfier (no batch) cw_comm: {:?}", cw_comm);
-
         let aw_commits = [
             label_commitment!(lin_comm),
             label_commitment!(plonk_verifier_key.permutation.left_sigma),

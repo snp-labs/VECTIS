@@ -6,7 +6,6 @@
 
 //! Verifier-side of the PLONK Proving System
 
-//use crate::circuit::EmbeddedCurve;
 use crate::{
     commitment::HomomorphicCommitment,
     constraint_system::StandardComposer,
@@ -18,10 +17,7 @@ use ark_ff::PrimeField;
 use core::marker::PhantomData;
 use merlin::Transcript;
 
-use super::{
-    pd_cm::PDCommitment,
-    pi::PublicInputs,
-};
+use super::{pd_cm::PDCommitment, pi::PublicInputs};
 
 /// Abstraction structure designed verify [`Proof`]s.
 pub struct Verifier<F, P, PC>
@@ -118,7 +114,7 @@ where
         )
     }
 
-    /// Verify a
+    /// Verify a [`Proof`] using a batched commitment `cm_agg` and a proof dependent commitment `pd_cm`
     pub fn batched_verify(
         &self,
         proof: &Proof<F, PC>,
