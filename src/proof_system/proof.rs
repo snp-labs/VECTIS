@@ -99,6 +99,7 @@ where
         transcript: &mut Transcript,
         verifier_key: &PC::VerifierKey,
         pub_inputs: &PublicInputs<F>,
+        cw_comm: Option<PC::Commitment>,
     ) -> Result<(), Error>
     where
         P: TEModelParameters<BaseField = F>,
@@ -246,6 +247,10 @@ where
         // challenge `z`
         let aw_challenge: F = transcript.challenge_scalar(b"aggregate_witness");
 
+        let cw_comm = cw_comm.unwrap_or(self.cw_comm.clone());
+
+        println!("verfier (no batch) cw_comm: {:?}", cw_comm);
+
         let aw_commits = [
             label_commitment!(lin_comm),
             label_commitment!(plonk_verifier_key.permutation.left_sigma),
@@ -255,7 +260,7 @@ where
             label_commitment!(self.b_comm),
             label_commitment!(self.c_comm),
             label_commitment!(self.d_comm),
-            label_commitment!(self.cw_comm),
+            label_commitment!(cw_comm),
         ];
 
         let aw_evals = [

@@ -230,6 +230,8 @@ mod test {
                 });
 
                 composer.constrain_to_constant(should_be_four, F::from(4u64), None, None);
+                composer.constrain_to_constant(should_be_four, F::from(4u64), None, None);
+                composer.constrain_to_constant(should_be_four, F::from(4u64), None, None);
             },
             200,
         );

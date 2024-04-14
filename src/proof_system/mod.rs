@@ -12,8 +12,8 @@ mod preprocess;
 mod quotient_poly;
 mod widget;
 
-pub mod pd_cm;
 pub mod cw;
+pub mod pd_cm;
 pub mod pi;
 pub mod proof;
 pub mod prover;

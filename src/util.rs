@@ -148,6 +148,7 @@ where
 ///
 /// For values [v_0, v_1,... v_k] returns:
 /// v_0 + challenge * v_1 + ... + challenge^k  * v_k
+#[allow(dead_code)]
 pub fn lc<T, F>(values: &[T], challenge: &F) -> T
 where
     T: Mul<F, Output = T> + Add<T, Output = T> + Clone,

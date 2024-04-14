@@ -8,14 +8,20 @@
 
 //use crate::circuit::EmbeddedCurve;
 use crate::{
-    commitment::HomomorphicCommitment, constraint_system::StandardComposer, error::Error, poly_commit::PCCommitment, proof_system::{widget::VerifierKey as PlonkVerifierKey, Proof}
+    commitment::HomomorphicCommitment,
+    constraint_system::StandardComposer,
+    error::Error,
+    proof_system::{widget::VerifierKey as PlonkVerifierKey, Proof},
 };
 use ark_ec::TEModelParameters;
 use ark_ff::PrimeField;
 use core::marker::PhantomData;
 use merlin::Transcript;
 
-use super::{pd_cm::{self, PDCommitment}, pi::PublicInputs};
+use super::{
+    pd_cm::PDCommitment,
+    pi::PublicInputs,
+};
 
 /// Abstraction structure designed verify [`Proof`]s.
 pub struct Verifier<F, P, PC>
@@ -108,28 +114,35 @@ where
             &mut self.preprocessed_transcript.clone(),
             pc_verifier_key,
             public_inputs,
+            None,
         )
     }
 
-    /// Verify a 
-    pub fn batched_pedersen_verify(
+    /// Verify a
+    pub fn batched_verify(
         &self,
         proof: &Proof<F, PC>,
-        pd_cm: &PDCommitment<F, PC>,
+        proof_dependent_cm: &PDCommitment<F, PC>,
         cm_list: Vec<PC::Commitment>,
-        pc_batched_commit_key: &PC::BatchCommitterKey,
         pc_verifier_key: &PC::VerifierKey,
-        public_inputs: &PublicInputs<F>
+        public_inputs: &PublicInputs<F>,
     ) -> Result<(), Error> {
+        let mut trans = Transcript::new(b"compute challenge");
+
+        let pd_cm = proof_dependent_cm.pd_cm.clone();
+        let tau = PC::compute_challenge(&mut trans, cm_list.as_slice(), &pd_cm);
+        let cm_agg = PC::binary_encoding(cm_list.as_slice(), tau);
+
+        let cw_comm = PC::agg(&[pd_cm, cm_agg]);
+
         proof.verify::<P>(
             self.verifier_key.as_ref().unwrap(),
             &mut self.preprocessed_transcript.clone(),
             pc_verifier_key,
             public_inputs,
+            Some(cw_comm),
         )
     }
-
-    
 }
 
 impl<F, P, PC> Default for Verifier<F, P, PC>

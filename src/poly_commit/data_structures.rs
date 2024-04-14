@@ -1,12 +1,12 @@
-use crate::poly_commit::{ Polynomial, PolynomialCommitment, alloc::rc::Rc, String, Vec };
-use ark_ff::{ Field, ToConstraintField };
-use ark_serialize::{ CanonicalDeserialize, CanonicalSerialize, SerializationError };
+use crate::poly_commit::{alloc::rc::Rc, Polynomial, PolynomialCommitment, String, Vec};
+use ark_ff::{Field, ToConstraintField};
+use ark_serialize::{CanonicalDeserialize, CanonicalSerialize, SerializationError};
 use ark_std::rand::RngCore;
 use ark_std::{
     borrow::Borrow,
-    io::{ Read, Write },
+    io::{Read, Write},
     marker::PhantomData,
-    ops::{ AddAssign, MulAssign, SubAssign },
+    ops::{AddAssign, MulAssign, SubAssign},
 };
 
 /// Labels a `LabeledPolynomial` or a `LabeledCommitment`.
@@ -14,14 +14,18 @@ pub type PolynomialLabel = String;
 
 /// Defines the minimal interface for public params for any polynomial
 /// commitment scheme.
-pub trait PCUniversalParams: Clone + core::fmt::Debug + CanonicalSerialize + CanonicalDeserialize {
+pub trait PCUniversalParams:
+    Clone + core::fmt::Debug + CanonicalSerialize + CanonicalDeserialize
+{
     /// Outputs the maximum degree supported by the committer key.
     fn max_degree(&self) -> usize;
 }
 
 /// Defines the minimal interface of committer keys for any polynomial
 /// commitment scheme.
-pub trait PCCommitterKey: Clone + core::fmt::Debug + CanonicalSerialize + CanonicalDeserialize {
+pub trait PCCommitterKey:
+    Clone + core::fmt::Debug + CanonicalSerialize + CanonicalDeserialize
+{
     /// Outputs the maximum degree supported by the universal parameters
     /// `Self` was derived from.
     fn max_degree(&self) -> usize;
@@ -38,7 +42,9 @@ pub trait PCBatchCommitterKey: Clone + core::fmt::Debug {
 
 /// Defines the minimal interface of verifier keys for any polynomial
 /// commitment scheme.
-pub trait PCVerifierKey: Clone + core::fmt::Debug + CanonicalSerialize + CanonicalDeserialize {
+pub trait PCVerifierKey:
+    Clone + core::fmt::Debug + CanonicalSerialize + CanonicalDeserialize
+{
     /// Outputs the maximum degree supported by the universal parameters
     /// `Self` was derived from.
     fn max_degree(&self) -> usize;
@@ -56,7 +62,9 @@ pub trait PCPreparedVerifierKey<Unprepared: PCVerifierKey> {
 
 /// Defines the minimal interface of commitments for any polynomial
 /// commitment scheme.
-pub trait PCCommitment: Clone + ark_ff::ToBytes + CanonicalSerialize + CanonicalDeserialize {
+pub trait PCCommitment:
+    Clone + ark_ff::ToBytes + CanonicalSerialize + CanonicalDeserialize
+{
     /// Outputs a non-hiding commitment to the zero polynomial.
     fn empty() -> Self;
 
@@ -89,7 +97,7 @@ pub trait PCRandomness: Clone + CanonicalSerialize + CanonicalDeserialize {
         num_queries: usize,
         has_degree_bound: bool,
         num_vars: Option<usize>,
-        rng: &mut R
+        rng: &mut R,
     ) -> Self;
 }
 
@@ -135,7 +143,7 @@ impl<'a, F: Field, P: Polynomial<F>> LabeledPolynomial<F, P> {
         label: PolynomialLabel,
         polynomial: P,
         degree_bound: Option<usize>,
-        hiding_bound: Option<usize>
+        hiding_bound: Option<usize>,
     ) -> Self {
         Self {
             label,
@@ -191,7 +199,8 @@ pub struct LabeledCommitment<C: PCCommitment> {
 }
 
 impl<F: Field, C: PCCommitment + ToConstraintField<F>> ToConstraintField<F>
-for LabeledCommitment<C> {
+    for LabeledCommitment<C>
+{
     fn to_field_elements(&self) -> Option<Vec<F>> {
         self.commitment.to_field_elements()
     }
@@ -243,7 +252,11 @@ impl LCTerm {
     /// Returns `true` if `self == LCTerm::One`
     #[inline]
     pub fn is_one(&self) -> bool {
-        if let LCTerm::One = self { true } else { false }
+        if let LCTerm::One = self {
+            true
+        } else {
+            false
+        }
     }
 }
 
@@ -310,10 +323,7 @@ impl<F: Field> LinearCombination<F> {
     /// Construct a new labeled linear combination.
     /// with the terms specified in `term`.
     pub fn new(label: impl Into<String>, terms: Vec<(F, impl Into<LCTerm>)>) -> Self {
-        let terms = terms
-            .into_iter()
-            .map(|(c, t)| (c, t.into()))
-            .collect();
+        let terms = terms.into_iter().map(|(c, t)| (c, t.into())).collect();
         Self {
             label: label.into(),
             terms: terms,
@@ -339,13 +349,15 @@ impl<F: Field> LinearCombination<F> {
 
 impl<'a, F: Field> AddAssign<(F, &'a LinearCombination<F>)> for LinearCombination<F> {
     fn add_assign(&mut self, (coeff, other): (F, &'a LinearCombination<F>)) {
-        self.terms.extend(other.terms.iter().map(|(c, t)| (coeff * c, t.clone())));
+        self.terms
+            .extend(other.terms.iter().map(|(c, t)| (coeff * c, t.clone())));
     }
 }
 
 impl<'a, F: Field> SubAssign<(F, &'a LinearCombination<F>)> for LinearCombination<F> {
     fn sub_assign(&mut self, (coeff, other): (F, &'a LinearCombination<F>)) {
-        self.terms.extend(other.terms.iter().map(|(c, t)| (-coeff * c, t.clone())));
+        self.terms
+            .extend(other.terms.iter().map(|(c, t)| (-coeff * c, t.clone())));
     }
 }
 
@@ -357,7 +369,8 @@ impl<'a, F: Field> AddAssign<&'a LinearCombination<F>> for LinearCombination<F> 
 
 impl<'a, F: Field> SubAssign<&'a LinearCombination<F>> for LinearCombination<F> {
     fn sub_assign(&mut self, other: &'a LinearCombination<F>) {
-        self.terms.extend(other.terms.iter().map(|(c, t)| (-*c, t.clone())));
+        self.terms
+            .extend(other.terms.iter().map(|(c, t)| (-*c, t.clone())));
     }
 }
 

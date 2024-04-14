@@ -1,23 +1,26 @@
-use crate::{
-    commitment::HomomorphicCommitment,
-    error::{to_pc_error, Error},
-    prelude::StandardComposer,
-    proof_system::{
-        cw::CommittedWitness, pi::PublicInputs, Proof, Prover, ProverKey, Verifier, VerifierKey,
-    },
-};
-use ark_ec::models::TEModelParameters;
-use ark_ff::PrimeField;
-use ark_serialize::*;
+// use crate::{
+//     commitment::HomomorphicCommitment,
+//     error::{to_pc_error, Error},
+//     prelude::StandardComposer,
+//     proof_system::{
+//         cw::CommittedWitness, pi::PublicInputs, Proof, Prover, ProverKey, Verifier, VerifierKey,
+//     },
+// };
+// use ark_ec::models::TEModelParameters;
+// use ark_ff::PrimeField;
+// use ark_serialize::*;
 
 #[cfg(test)]
 mod test {
     const N: usize = 4;
 
-    use super::*;
+    // use super::*;
+    use crate::error::{to_pc_error, Error};
     use crate::{
+        commitment::HomomorphicCommitment,
         constraint_system::{ecc::Point, StandardComposer, Variable},
-        prelude::{verify_proof, Circuit, Error, VerifierData},
+        prelude::{verify_proof, Circuit, VerifierData},
+        proof_system::Prover,
         util,
     };
     use ark_bls12_377::Bls12_377;
@@ -27,6 +30,7 @@ mod test {
         TEModelParameters,
     };
     use ark_ff::{FftField, PrimeField, UniformRand};
+    use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
     use ark_std::test_rng;
     use std::convert::TryInto;
 
@@ -97,7 +101,7 @@ mod test {
         let mut circuit = TestCircuit::<F, P>::default();
 
         // Compile the circuit
-        let (pk, (vk, _pi_pos)) = circuit.compile::<PC>(&pp)?;
+        let (pk, _, (vk, _pi_pos)) = circuit.compile::<PC>(&pp)?;
 
         let ck: Vec<GroupAffine<P>> = (0..2).map(|_| GroupAffine::rand(&mut test_rng())).collect();
         let msg: Vec<P::ScalarField> = (0..N)
@@ -117,7 +121,7 @@ mod test {
             .collect();
 
         // Prover POV
-        let (proof, pi, cw) = {
+        let (proof, pi, _) = {
             let mut circuit: TestCircuit<F, P> = TestCircuit {
                 ck: _to_vec(ck),
                 msg: _to_vec(msg),
@@ -134,7 +138,7 @@ mod test {
                 }
             }
 
-            circuit.gen_proof::<PC>(&pp, pk, b"Test")?
+            circuit.gen_proof::<PC>(&pp, pk, None, b"Test")?
         };
 
         let verifier_data = VerifierData::new(vk, pi);

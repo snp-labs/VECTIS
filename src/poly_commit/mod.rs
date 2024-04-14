@@ -141,7 +141,8 @@ pub trait PolynomialCommitment<F: Field, P: Polynomial<F>>: Sized {
         circuit_bound: usize,
         supported_hiding_bound: usize,
         enforced_degree_bounds: Option<&[usize]>,
-    ) -> Result<(Self::CommitterKey, Self::BatchCommitterKey, Self::VerifierKey), Self::Error>;
+    ) -> Result<(Self::CommitterKey, Self::VerifierKey), Self::Error>;
+    // ) -> Result<(Self::CommitterKey, Self::BatchCommitterKey, Self::VerifierKey), Self::Error>;
 
     /// Outputs a commitments to `polynomials`. If `polynomials[i].is_hiding()`,
     /// then the `i`-th commitment is hiding up to `polynomials.hiding_bound()` queries.
@@ -166,20 +167,24 @@ pub trait PolynomialCommitment<F: Field, P: Polynomial<F>>: Sized {
     where
         P: 'a;
 
+    /// Outputs a batched committer key
+    fn generate_batched_committer_key(
+        pp: &Self::UniversalParams,
+        circuit_bound: usize,
+    ) -> Result<Self::BatchCommitterKey, Self::Error>;
+
     /// Outputs a proof-dependent commitment to `committed_witness`
-    fn proof_dep_commit<'a>(
+    fn compute_proof_dependent_cm<'a>(
         bck: &Self::BatchCommitterKey,
         committed_witness: Vec<F>,
-        opening: Vec<F>
+        opening: Vec<F>,
     ) -> Result<LabeledCommitment<Self::Commitment>, Self::Error>;
-
 
     /// Outputs a batched commitment to `batched committed_witness`
     fn test_batched_commit<'a>(
         bck: &Self::BatchCommitterKey,
-        batched_committed_witness: Vec<F>
+        batched_committed_witness: Vec<F>,
     ) -> Result<LabeledCommitment<Self::Commitment>, Self::Error>;
-
 
     /// On input a list of labeled polynomials and a query point, `open` outputs a proof of evaluation
     /// of the polynomials at the query point.
@@ -734,8 +739,8 @@ pub mod tests {
             println!("supported degree: {:?}", supported_degree);
             println!("supported hiding bound: {:?}", supported_hiding_bound);
             println!("circuit bound: {:?}", circuit_bound);
-            
-            let (ck, _, vk) = PC::trim(
+
+            let (ck, vk) = PC::trim(
                 &pp,
                 supported_degree,
                 circuit_bound,
@@ -863,7 +868,7 @@ pub mod tests {
             println!("supported hiding bound: {:?}", supported_hiding_bound);
             println!("num_points_in_query_set: {:?}", num_points_in_query_set);
             println!("circuit bound: {:?}", circuit_bound);
-            let (ck, _, vk) = PC::trim(
+            let (ck, vk) = PC::trim(
                 &pp,
                 supported_degree,
                 circuit_bound,
@@ -1006,7 +1011,7 @@ pub mod tests {
             println!("{}", num_polynomials);
             println!("{}", enforce_degree_bounds);
 
-            let (ck, _,  vk) = PC::trim(
+            let (ck, vk) = PC::trim(
                 &pp,
                 // supported_degree + 6,
                 supported_degree,

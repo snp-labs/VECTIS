@@ -11,7 +11,8 @@ use crate::{
     error::{to_pc_error, Error},
     prelude::StandardComposer,
     proof_system::{
-        cw::CommittedWitness, pi::PublicInputs, Proof, Prover, ProverKey, Verifier, VerifierKey,
+        cw::CommittedWitness, pd_cm::PDCommitment, pi::PublicInputs, Proof, Prover, ProverKey,
+        Verifier, VerifierKey,
     },
 };
 use ark_ec::models::TEModelParameters;
@@ -160,7 +161,7 @@ where
 ///
 /// let mut circuit = TestCircuit::<BlsScalar, JubJubParameters>::default();
 /// // Compile the circuit
-/// let (pk_p, (vk, _pi_pos)) = circuit.compile::<PC>(&pp)?;
+/// let (pk_p, _, (vk, _pi_pos)) = circuit.compile::<PC>(&pp)?;
 ///
 /// let (x, y) = JubJubParameters::AFFINE_GENERATOR_COEFFS;
 /// let generator: GroupAffine<JubJubParameters> = GroupAffine::new(x, y);
@@ -179,7 +180,7 @@ where
 ///         e: JubJubScalar::from(2u64),
 ///         f: point_f_pi,
 ///     };
-///     circuit.gen_proof::<PC>(&pp, pk_p, b"Test")
+///     circuit.gen_proof::<PC>(&pp, pk_p, None, b"Test")
 /// }?;
 ///
 /// let verifier_data = VerifierData::new(vk, pi);
@@ -220,15 +221,22 @@ where
     fn compile<PC>(
         &mut self,
         u_params: &PC::UniversalParams,
-    ) -> Result<(ProverKey<F>, (VerifierKey<F, PC>, Vec<usize>)), Error>
+    ) -> Result<
+        (
+            ProverKey<F>,
+            PC::BatchCommitterKey,
+            (VerifierKey<F, PC>, Vec<usize>),
+        ),
+        Error,
+    >
     where
         F: PrimeField,
         PC: HomomorphicCommitment<F>,
     {
         // Setup PublicParams
-        // let circuit_size = self.padded_circuit_size();
         let circuit_size = self.padded_circuit_size() + 6;
-        let (ck,_, _) = PC::trim(u_params, circuit_size, self.padded_circuit_size(), 0, None).map_err(to_pc_error::<F, PC>)?;
+        let (ck, _) = PC::trim(u_params, circuit_size, self.padded_circuit_size(), 0, None)
+            .map_err(to_pc_error::<F, PC>)?;
 
         //Generate & save `ProverKey` with some random values.
         let mut prover = Prover::<F, P, PC>::new(b"CircuitCompilation");
@@ -239,10 +247,19 @@ where
         let mut verifier = Verifier::new(b"CircuitCompilation");
         self.gadget(verifier.mut_cs())?;
         verifier.preprocess(&ck)?;
+
+        assert!(prover.circuit_bound().is_power_of_two());
+        assert!(verifier.circuit_bound().is_power_of_two());
+        assert_eq!(prover.circuit_bound(), verifier.circuit_bound());
+        let n = prover.circuit_bound();
+
+        let bck = PC::generate_batched_committer_key(u_params, n).unwrap();
+
         Ok((
             prover
                 .prover_key
                 .expect("Unexpected error. Missing ProverKey in compilation"),
+            bck,
             (
                 verifier
                     .verifier_key
@@ -259,6 +276,7 @@ where
         &mut self,
         u_params: &PC::UniversalParams,
         prover_key: ProverKey<F>,
+        opening: Option<Vec<F>>,
         transcript_init: &'static [u8],
     ) -> Result<(Proof<F, PC>, PublicInputs<F>, CommittedWitness<F>), Error>
     where
@@ -268,7 +286,11 @@ where
     {
         // let circuit_size = self.padded_circuit_size();
         let circuit_size = self.padded_circuit_size() + 6;
-        let (ck, bck, _) = PC::trim(u_params, circuit_size, self.padded_circuit_size(), 0, None).map_err(to_pc_error::<F, PC>)?;
+        let (ck, _) = PC::trim(u_params, circuit_size, self.padded_circuit_size(), 0, None)
+            .map_err(to_pc_error::<F, PC>)?;
+
+        let bck = PC::generate_batched_committer_key(u_params, self.padded_circuit_size())
+            .map_err(to_pc_error::<F, PC>)?;
         // New Prover instance
         let mut prover = Prover::new(transcript_init);
         // Fill witnesses for Prover
@@ -278,7 +300,7 @@ where
         let pi = prover.cs.get_pi().clone();
         let cw = prover.cs.get_cw().clone();
 
-        Ok((prover.prove(&bck,&ck)?.0, pi, cw))
+        Ok((prover.prove(&bck, opening, &ck)?.0, pi, cw))
     }
 
     /// Returns the Circuit size padded to the next power of two.
@@ -300,13 +322,49 @@ where
     PC: HomomorphicCommitment<F>,
 {
     let mut verifier: Verifier<F, P, PC> = Verifier::new(transcript_init);
-    // let padded_circuit_size = plonk_verifier_key.padded_circuit_size();
     let padded_circuit_size = plonk_verifier_key.padded_circuit_size() + 6;
     verifier.verifier_key = Some(plonk_verifier_key.clone());
-    let (_, _, vk) = 
-        PC::trim(u_params, padded_circuit_size,plonk_verifier_key.padded_circuit_size(), 0, None).map_err(to_pc_error::<F, PC>)?;
+    let (_, vk) = PC::trim(
+        u_params,
+        padded_circuit_size,
+        plonk_verifier_key.padded_circuit_size(),
+        0,
+        None,
+    )
+    .map_err(to_pc_error::<F, PC>)?;
 
     verifier.verify(proof, &vk, public_inputs)
+}
+
+/// Verifies a proof using the provided `CircuitInputs` & `VerifierKey`
+/// instances.
+pub fn verify_with_batched_proof<F, P, PC>(
+    u_params: &PC::UniversalParams,
+    plonk_verifier_key: VerifierKey<F, PC>,
+    proof: &Proof<F, PC>,
+    proof_dependent_cm: &PDCommitment<F, PC>,
+    cm_list: Vec<PC::Commitment>,
+    public_inputs: &PublicInputs<F>,
+    transcript_init: &'static [u8],
+) -> Result<(), Error>
+where
+    F: PrimeField,
+    P: TEModelParameters<BaseField = F>,
+    PC: HomomorphicCommitment<F>,
+{
+    let mut verifier: Verifier<F, P, PC> = Verifier::new(transcript_init);
+    let padded_circuit_size = plonk_verifier_key.padded_circuit_size() + 6;
+    verifier.verifier_key = Some(plonk_verifier_key.clone());
+    let (_, vk) = PC::trim(
+        u_params,
+        padded_circuit_size,
+        plonk_verifier_key.padded_circuit_size(),
+        0,
+        None,
+    )
+    .map_err(to_pc_error::<F, PC>)?;
+
+    verifier.batched_verify(proof, proof_dependent_cm, cm_list, &vk, public_inputs)
 }
 
 #[cfg(test)]
@@ -320,7 +378,6 @@ mod test {
     };
     use ark_ff::{FftField, PrimeField};
     use ark_std::test_rng;
-    use rand_core::OsRng;
 
     // Implements a circuit that checks:
     // 1) a + b = c where C is a PI
@@ -390,7 +447,7 @@ mod test {
         let mut circuit = TestCircuit::<F, P>::default();
 
         // Compile the circuit
-        let (pk, (vk, _pi_pos)) = circuit.compile::<PC>(&pp)?;
+        let (pk, _, (vk, _pi_pos)) = circuit.compile::<PC>(&pp)?;
 
         let (x, y) = P::AFFINE_GENERATOR_COEFFS;
         let generator: GroupAffine<P> = GroupAffine::new(x, y);
@@ -398,7 +455,7 @@ mod test {
             AffineCurve::mul(&generator, P::ScalarField::from(2u64).into_repr()).into_affine();
 
         // Prover POV
-        let (proof, pi, cw) = {
+        let (proof, pi, _) = {
             let mut circuit: TestCircuit<F, P> = TestCircuit {
                 a: F::from(20u64),
                 b: F::from(5u64),
@@ -417,7 +474,7 @@ mod test {
                 }
             }
 
-            circuit.gen_proof::<PC>(&pp, pk, b"Test")?
+            circuit.gen_proof::<PC>(&pp, pk, None, b"Test")?
         };
 
         let verifier_data = VerifierData::new(vk, pi);

@@ -2,11 +2,12 @@
 mod test {
     const N: usize = 4;
     use crate::{
+        circuit::verify_with_batched_proof,
         commitment::HomomorphicCommitment,
         constraint_system::{StandardComposer, Variable},
         error::to_pc_error,
-        prelude::{verify_proof, Circuit, Error, VerifierData},
-        proof_system::Prover,
+        prelude::{Circuit, Error, VerifierData},
+        proof_system::{pd_cm::PDCommitment, Prover},
     };
     use ark_bls12_377::Bls12_377;
     use ark_bls12_381::Bls12_381;
@@ -14,6 +15,7 @@ mod test {
     use ark_ff::{FftField, PrimeField};
     use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
     use ark_std::test_rng;
+    use merlin::Transcript;
     use std::{convert::TryInto, marker::PhantomData};
 
     fn _to_vec<T, const N: usize>(v: Vec<T>) -> [T; N] {
@@ -157,11 +159,11 @@ mod test {
         }
 
         fn padded_circuit_size(&self) -> usize {
-            1 << 15
+            1 << 6
         }
     }
 
-    fn test_full<F, P, PC>() -> Result<(), Error>
+    fn test_batch_full<F, P, PC>() -> Result<(), Error>
     where
         F: PrimeField,
         P: TEModelParameters<BaseField = F>,
@@ -174,22 +176,35 @@ mod test {
         let mut circuit = TestCircuit::<F, P>::default();
 
         // Compile the circuit
-        let (pk, (vk, _pi_pos)) = circuit.compile::<PC>(&pp)?;
+        let (pk, bck, (vk, _pi_pos)) = circuit.compile::<PC>(&pp)?;
 
-        let rand = F::rand(&mut test_rng());
+        // Example values
+        let m_list: Vec<F> = (0..N).map(|_| F::rand(&mut test_rng())).collect();
+        let o_list: Vec<F> = (0..N).map(|_| F::rand(&mut test_rng())).collect();
 
-        let msg: Vec<F> = (0..N).map(|_| F::rand(&mut test_rng())).collect();
-        let open: Vec<F> = (0..N).map(|_| F::rand(&mut test_rng())).collect();
+        let cm_list = PC::generate_commitment_list(bck.clone(), m_list.clone(), o_list.clone());
 
-        let agg_m = aggregate_vector(msg.clone(), rand);
-        let agg_o = aggregate_vector(open.clone(), rand);
+        let opening: Vec<F> = (0..2).map(|_| F::rand(&mut test_rng())).collect();
+        let pd_cm = PC::generate_proof_dependent_commitment(&bck, &m_list, &o_list, &opening);
+
+        let proof_dependent_cm: PDCommitment<F, PC> = PDCommitment { pd_cm, opening };
+
+        let mut trans = Transcript::new(b"compute challenge");
+
+        // let rand = PC::compute_challenge(&mut trans, cm_list.as_slice(), &proof_dependent_cm.pd_cm);
+        let rand = PC::compute_challenge(&mut trans, cm_list.as_slice(), &proof_dependent_cm.pd_cm);
+
+        let agg_m = aggregate_vector(m_list.clone(), rand);
+        let agg_o = aggregate_vector(o_list.clone(), rand);
+
+        let cm_agg = PC::test_batched_commit(&bck, vec![agg_m, agg_o]).unwrap();
 
         // Prover POV
         let (proof, pi, _cw) = {
             let mut circuit: TestCircuit<F, P> = TestCircuit {
                 agg: [agg_m, agg_o],
-                m_vec: _to_vec(msg),
-                o_vec: _to_vec(open),
+                m_vec: _to_vec(m_list),
+                o_vec: _to_vec(o_list),
                 rand,
                 _p: PhantomData,
             };
@@ -203,7 +218,7 @@ mod test {
                 }
             }
 
-            circuit.gen_proof::<PC>(&pp, pk, b"Test")?
+            circuit.gen_proof::<PC>(&pp, pk, Some(proof_dependent_cm.opening.clone()), b"Test")?
         };
 
         let verifier_data = VerifierData::new(vk, pi);
@@ -217,10 +232,12 @@ mod test {
 
         assert!(deserialized_verifier_data == verifier_data);
 
-        assert!(verify_proof::<F, P, PC>(
+        assert!(verify_with_batched_proof::<F, P, PC>(
             &pp,
             verifier_data.key,
             &proof,
+            &proof_dependent_cm,
+            cm_list,
             &verifier_data.pi,
             b"Test"
         )
@@ -232,7 +249,7 @@ mod test {
     #[test]
     #[allow(non_snake_case)]
     fn test_batched_pedersen_full_on_Bls12_381() -> Result<(), Error> {
-        test_full::<
+        test_batch_full::<
             <Bls12_381 as PairingEngine>::Fr,
             ark_ed_on_bls12_381::EdwardsParameters,
             crate::commitment::KZG10<Bls12_381>,
@@ -242,7 +259,7 @@ mod test {
     #[test]
     #[allow(non_snake_case)]
     fn test_batched_pedersen_full_on_Bls12_377() -> Result<(), Error> {
-        test_full::<
+        test_batch_full::<
             <Bls12_377 as PairingEngine>::Fr,
             ark_ed_on_bls12_377::EdwardsParameters,
             crate::commitment::KZG10<Bls12_377>,

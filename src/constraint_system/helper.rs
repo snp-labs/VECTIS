@@ -13,7 +13,6 @@ use crate::{
 use ark_ec::TEModelParameters;
 use ark_ff::PrimeField;
 use ark_std::test_rng;
-use rand_core::OsRng;
 
 /// Adds dummy constraints using arithmetic gates.
 #[allow(dead_code)]
@@ -48,7 +47,7 @@ where
         PC::setup(2 * n, None, &mut test_rng()).map_err(to_pc_error::<F, PC>)?;
 
     // Provers View
-    let ((proof, opening), public_inputs) = {
+    let ((proof, _), public_inputs) = {
         // Create a prover struct
         let mut prover = Prover::<F, P, PC>::new(b"demo");
 
@@ -59,12 +58,17 @@ where
         gadget(prover.mut_cs());
 
         // Commit Key
-        let (ck, bck, _) = PC::trim(&universal_params, prover.circuit_bound() + 6, prover.circuit_bound(), 0, None)
-            .map_err(to_pc_error::<F, PC>)?;
+        let (ck, _) = PC::trim(
+            &universal_params,
+            prover.circuit_bound() + 6,
+            prover.circuit_bound(),
+            0,
+            None,
+        )
+        .map_err(to_pc_error::<F, PC>)?;
 
-        // let (ck, _) =
-        // PC::trim(&universal_params, prover.circuit_bound(), 0, None)
-        //     .map_err(to_pc_error::<F, PC>)?;
+        let bck = PC::generate_batched_committer_key(&universal_params, prover.circuit_bound())
+            .map_err(to_pc_error::<F, PC>)?;
 
         // Preprocess circuit
         prover.preprocess(&ck)?;
@@ -74,7 +78,7 @@ where
         let public_inputs = prover.cs.get_pi().clone();
 
         // Compute Proof
-        (prover.prove(&bck,&ck)?, public_inputs)
+        (prover.prove(&bck, None, &ck)?, public_inputs)
     };
     // Verifiers view
     //
@@ -91,7 +95,16 @@ where
     // let (ck, vk) =
     //     PC::trim(&universal_params, verifier.circuit_bound(), 0, None)
     //         .map_err(to_pc_error::<F, PC>)?;
-    let (ck, bck, vk) = PC::trim(&universal_params, verifier.circuit_bound() + 6, verifier.circuit_bound(),0, None)
+    let (ck, vk) = PC::trim(
+        &universal_params,
+        verifier.circuit_bound() + 6,
+        verifier.circuit_bound(),
+        0,
+        None,
+    )
+    .map_err(to_pc_error::<F, PC>)?;
+
+    let bck = PC::generate_batched_committer_key(&universal_params, verifier.circuit_bound())
         .map_err(to_pc_error::<F, PC>)?;
 
     // Preprocess circuit

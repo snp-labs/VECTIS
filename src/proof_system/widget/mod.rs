@@ -246,7 +246,9 @@ where
 ///
 /// This structure is used by the Prover in order to construct a
 /// [`Proof`](crate::proof_system::Proof).
-#[derive(CanonicalDeserialize, CanonicalSerialize, derivative::Derivative, Debug, PartialEq)]
+#[derive(
+    CanonicalDeserialize, CanonicalSerialize, derivative::Derivative, Debug, PartialEq, Clone,
+)]
 pub struct ProverKey<F>
 where
     F: PrimeField,

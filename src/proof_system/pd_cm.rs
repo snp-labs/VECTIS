@@ -3,29 +3,40 @@
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 //! The opening
-use ark_ff::PrimeField;
 use crate::commitment::HomomorphicCommitment;
+use ark_ff::PrimeField;
+use ark_poly::univariate::DensePolynomial;
 
-/// Proof-dependent commitment에 대한 [`Opening`]
-// pub struct Opening<F: PrimeField> {
-//     pub(crate) opening: Vec<F>,
-// }
 
 /// Proof-dependent commitment
-pub struct PDCommitment<F : PrimeField, PC: HomomorphicCommitment<F>> 
-{
+#[derive(Debug, Clone)]
+pub struct PDCommitment<F: PrimeField, PC: HomomorphicCommitment<F>> {
     /// The commitment
     pub(crate) pd_cm: PC::Commitment,
 
     /// The opening of the commitment
-    pub(crate) opening: Vec<F>
+    pub(crate) opening: Vec<F>,
 }
 
-impl<F : PrimeField, PC: HomomorphicCommitment<F>> Default for PDCommitment<F, PC> {
-    fn default() -> Self {
-        Self {
-            pd_cm: PC::Commitment::default(),
-            opening: Vec::default(),
-        }
+impl<F, PC> PDCommitment<F, PC>
+where
+    F: PrimeField,
+    PC: HomomorphicCommitment<F>,
+{
+    /// Creates a new struct for [`PublicInputs`].
+    pub fn new(pd_cm: PC::Commitment, opening: Vec<F>) -> Self {
+        Self { pd_cm, opening }
     }
+}
+
+/// Batch proof
+pub struct BatchedProof<F: PrimeField, PC: HomomorphicCommitment<F>> {
+    /// Committed witness polynomial
+    pub(crate) cw_poly: DensePolynomial<F>,
+
+    /// Committed Witness Commitment
+    pub(crate) cw_comm: PC::Commitment,
+
+    /// Committed witness randomness
+    pub(crate) cw_rand: PC::Randomness,
 }

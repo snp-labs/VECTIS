@@ -7,30 +7,32 @@
 //! Prover-side of the PLONK Proving System
 use crate::{
     commitment::HomomorphicCommitment,
-    constraint_system::{ StandardComposer, Variable },
-    error::{ to_pc_error, Error },
-    label_polynomial,
+    constraint_system::{StandardComposer, Variable},
+    error::{to_pc_error, Error},
+    label_commitment, label_polynomial,
     poly_commit::LabeledCommitment,
-    proof_system::{ linearisation_poly, proof::Proof, quotient_poly, ProverKey }, transcript::TranscriptProtocol
+    proof_system::{linearisation_poly, proof::Proof, quotient_poly, ProverKey},
+    transcript::TranscriptProtocol,
 };
-use ark_ec::{ ModelParameters, TEModelParameters };
+use ark_ec::{ModelParameters, TEModelParameters};
 use ark_ff::PrimeField;
 use ark_poly::{
-    univariate::DensePolynomial,
-    EvaluationDomain,
-    GeneralEvaluationDomain,
-    UVPolynomial,
+    univariate::DensePolynomial, EvaluationDomain, GeneralEvaluationDomain, UVPolynomial,
 };
-use ark_std::{ rand::Rng, test_rng };
+use ark_std::{rand::Rng, test_rng};
 use core::marker::PhantomData;
 use merlin::Transcript;
 
-use super::pd_cm::PDCommitment;
+use super::pd_cm::{BatchedProof, PDCommitment};
 
 /// Abstraction structure designed to construct a circuit and generate
 /// [`Proof`]s for it.
 pub struct Prover<F, P, PC>
-    where F: PrimeField, P: ModelParameters<BaseField = F>, PC: HomomorphicCommitment<F> {
+where
+    F: PrimeField,
+    P: ModelParameters<BaseField = F>,
+    PC: HomomorphicCommitment<F>,
+{
     /// Proving Key which is used to create proofs about a specific PLONK
     /// circuit.
     pub prover_key: Option<ProverKey<F>>,
@@ -46,7 +48,10 @@ pub struct Prover<F, P, PC>
     _phantom: PhantomData<PC>,
 }
 impl<F, P, PC> Prover<F, P, PC>
-    where F: PrimeField, P: TEModelParameters<BaseField = F>, PC: HomomorphicCommitment<F>
+where
+    F: PrimeField,
+    P: TEModelParameters<BaseField = F>,
+    PC: HomomorphicCommitment<F>,
 {
     /// Creates a new `Prover` instance.
     pub fn new(label: &'static [u8]) -> Self {
@@ -86,7 +91,7 @@ impl<F, P, PC> Prover<F, P, PC>
         let pk = self.cs.preprocess_prover(
             commit_key,
             &mut self.preprocessed_transcript,
-            PhantomData::<PC>
+            PhantomData::<PC>,
         )?;
         self.prover_key = Some(pk);
         Ok(())
@@ -108,9 +113,7 @@ impl<F, P, PC> Prover<F, P, PC>
 
     /// Convert variables to their actual witness values.
     fn to_scalars(&self, vars: &[Variable]) -> Vec<F> {
-        vars.iter()
-            .map(|var| self.cs.variables[var])
-            .collect()
+        vars.iter().map(|var| self.cs.variables[var]).collect()
     }
 
     /// Resets the witnesses in the prover object.
@@ -149,22 +152,43 @@ impl<F, P, PC> Prover<F, P, PC>
         rng: &mut R,
         witnesses: &[F],
         hiding_degree: usize,
-        domain: &GeneralEvaluationDomain<F>
-    ) -> (DensePolynomial<F>,  Vec<F>)
-        where R: Rng
+        domain: &GeneralEvaluationDomain<F>,
+    ) -> (DensePolynomial<F>, Vec<F>)
+    where
+        R: Rng,
     {
         let mut w_vec_inverse = domain.ifft(witnesses);
         let mut opening = Vec::new();
 
         for i in 0..hiding_degree + 1 {
             let blinding_scalar = F::rand(rng);
+            // let blinding_scalar = F::zero();
 
             w_vec_inverse[i] = w_vec_inverse[i] - blinding_scalar;
             w_vec_inverse.push(blinding_scalar);
             opening.push(blinding_scalar);
         }
 
-        (DensePolynomial::<F>::from_coefficients_vec(w_vec_inverse), opening)
+        (
+            DensePolynomial::<F>::from_coefficients_vec(w_vec_inverse),
+            opening,
+        )
+    }
+
+    /// adds blinding scalars to a witness vector with opening
+    pub fn add_blinder_with_opening(
+        witnesses: &[F],
+        opening: &Vec<F>,
+        domain: &GeneralEvaluationDomain<F>,
+    ) -> DensePolynomial<F> {
+        let mut w_vec_inverse = domain.ifft(witnesses);
+
+        for i in 0..opening.len() {
+            w_vec_inverse[i] = w_vec_inverse[i] - opening[i];
+            w_vec_inverse.push(opening[i]);
+        }
+
+        DensePolynomial::<F>::from_coefficients_vec(w_vec_inverse)
     }
 
     /// Compute a proof-dependent commitment
@@ -174,55 +198,52 @@ impl<F, P, PC> Prover<F, P, PC>
         n: usize,
         commit_key: &PC::CommitterKey,
         batched_commit_key: &PC::BatchCommitterKey,
-        _data: PhantomData<PC>
-    ) -> Result<(
-        DensePolynomial<F>,
-        Vec<LabeledCommitment<PC::Commitment>>,
-        Vec<PC::Randomness>,
-        PDCommitment<F, PC>
-    ), Error> {
+        opening: Option<Vec<F>>,
+        _data: PhantomData<PC>,
+    ) -> Result<(BatchedProof<F, PC>, PDCommitment<F, PC>), Error> {
         let cw = self.cs.get_cw().as_evals(n);
+
         // Add blinding Factor
-        let (cw_poly, opening) = Self::add_blinder(&mut test_rng(), &cw, 1, &domain);
+        let (cw_poly, opening) = match opening {
+            Some(opening_value) => {
+                let cw_poly = Self::add_blinder_with_opening(&cw, &opening_value, &domain);
+                (cw_poly, opening_value)
+            }
+            None => Self::add_blinder(&mut test_rng(), &cw, 1, &domain),
+        };
 
         // Committed witness polynomial
         let cw_polys = [label_polynomial!(cw_poly)];
 
         // The commitment to the committed witness
-        let (cw_comm, cw_rand) = 
-        PC::commit(commit_key, cw_polys.iter(), None).map_err(
-            to_pc_error::<F, PC>
-        )?; 
+        let (cw_comm, cw_rand) =
+            PC::commit(commit_key, cw_polys.iter(), None).map_err(to_pc_error::<F, PC>)?;
 
-        let pd_cm = cw.get(6..)
-            .map_or(PC::Commitment::default(), |cw_slice| {
-                PC::proof_dep_commit(
-                    batched_commit_key,
-      cw_slice.to_vec(),
-                         opening.clone()
-                ).unwrap().commitment().clone()
-            });
-        
+        let pd_cm = cw.get(6..).map_or(PC::Commitment::default(), |cw_slice| {
+            PC::compute_proof_dependent_cm(batched_commit_key, cw_slice.to_vec(), opening.clone())
+                .unwrap()
+                .commitment()
+                .clone()
+        });
 
-        // let bcm = cw.get(4..6)
-        //     .map_or(PC::Commitment::default(), |cw_slice| {
-        //         PC::test_batched_commit(batched_commit_key, cw_slice.to_vec()).unwrap().commitment().clone()
-        //     });
+        let bcm = cw.get(4..6).map_or(PC::Commitment::default(), |cw_slice| {
+            PC::test_batched_commit(batched_commit_key, cw_slice.to_vec())
+                .unwrap()
+                .commitment()
+                .clone()
+        });
 
-        // let _cw_comm = PC::agg(vec![pd_cm, bcm].as_slice());
-        // println!("compute comm: {:?}\n \n", _cw_comm);
+        let _cw_comm = PC::agg(vec![pd_cm.clone(), bcm].as_slice());
 
         Ok((
-            cw_poly,
-            cw_comm,
-            cw_rand, 
-            PDCommitment {
-                pd_cm,
-                opening
-            }
+            BatchedProof {
+                cw_poly,
+                cw_comm: cw_comm[0].commitment().clone(),
+                cw_rand: cw_rand[0].clone(),
+            },
+            PDCommitment { pd_cm, opening },
         ))
     }
-
 
     /// Creates a [`Proof]` that demonstrates that a circuit is satisfied.
     /// # Note
@@ -233,15 +254,16 @@ impl<F, P, PC> Prover<F, P, PC>
     pub fn prove_with_preprocessed(
         &self,
         commit_key: &PC::CommitterKey,
-        batch_commit_key: &PC::BatchCommitterKey,
         prover_key: &ProverKey<F>,
-        _data: PhantomData<PC>
+        batched_proof: BatchedProof<F, PC>,
+        proof_dependent_cm: PDCommitment<F, PC>,
+        _data: PhantomData<PC>,
     ) -> Result<(Proof<F, PC>, PDCommitment<F, PC>), Error> {
         let domain = GeneralEvaluationDomain::new(self.cs.circuit_bound()).ok_or(
             Error::InvalidEvalDomainSize {
                 log_size_of_group: self.cs.circuit_bound().trailing_zeros(),
                 adicity: <<F as ark_ff::FftField>::FftParams as ark_ff::FftParameters>::TWO_ADICITY,
-            }
+            },
         )?;
         let n = domain.size();
 
@@ -253,10 +275,7 @@ impl<F, P, PC> Prover<F, P, PC>
         // Append Public Inputs to the transcript
         transcript.append(b"pi", self.cs.get_pi());
 
-        let (cw_poly, cw_comm, cw_rand, pd_cm) = 
-            self.proof_dep_commit(&domain, n, commit_key, batch_commit_key, _data)?;
-
-        let cw_polys = [label_polynomial!(cw_poly)];
+        let cw_polys = [label_polynomial!(batched_proof.cw_poly)];
 
         // 1. Compute witness Polynomials
         //
@@ -283,9 +302,8 @@ impl<F, P, PC> Prover<F, P, PC>
         ];
 
         // Commit to witness polynomials.
-        let (w_commits, w_rands) = PC::commit(commit_key, w_polys.iter(), None).map_err(
-            to_pc_error::<F, PC>
-        )?;
+        let (w_commits, w_rands) =
+            PC::commit(commit_key, w_polys.iter(), None).map_err(to_pc_error::<F, PC>)?;
 
         // Add witness polynomial commitments to transcript.
         transcript.append(b"w_l", w_commits[0].commitment());
@@ -315,13 +333,12 @@ impl<F, P, PC> Prover<F, P, PC>
                 &prover_key.permutation.right_sigma.0,
                 &prover_key.permutation.out_sigma.0,
                 &prover_key.permutation.fourth_sigma.0,
-            )
+            ),
         );
 
         // Commit to permutation polynomial.
-        let (z_poly_commit, _) = PC::commit(commit_key, &[label_polynomial!(z_poly)], None).map_err(
-            to_pc_error::<F, PC>
-        )?;
+        let (z_poly_commit, _) = PC::commit(commit_key, &[label_polynomial!(z_poly)], None)
+            .map_err(to_pc_error::<F, PC>)?;
 
         // Add permutation polynomial commitment to transcript.
         transcript.append(b"z", z_poly_commit[0].commitment());
@@ -336,15 +353,19 @@ impl<F, P, PC> Prover<F, P, PC>
         let alpha = transcript.challenge_scalar(b"alpha");
         transcript.append(b"alpha", &alpha);
 
-        let fixed_base_sep_challenge = transcript.challenge_scalar(
-            b"fixed base separation challenge"
+        let fixed_base_sep_challenge =
+            transcript.challenge_scalar(b"fixed base separation challenge");
+        transcript.append(
+            b"fixed base separation challenge",
+            &fixed_base_sep_challenge,
         );
-        transcript.append(b"fixed base separation challenge", &fixed_base_sep_challenge);
 
-        let var_base_sep_challenge = transcript.challenge_scalar(
-            b"variable base separation challenge"
+        let var_base_sep_challenge =
+            transcript.challenge_scalar(b"variable base separation challenge");
+        transcript.append(
+            b"variable base separation challenge",
+            &var_base_sep_challenge,
         );
-        transcript.append(b"variable base separation challenge", &var_base_sep_challenge);
 
         let t_poly = quotient_poly::compute::<F, P>(
             &domain,
@@ -354,13 +375,14 @@ impl<F, P, PC> Prover<F, P, PC>
             &w_r_poly,
             &w_o_poly,
             &w_4_poly,
-            &cw_poly,
+            // &cw_poly,
+            &batched_proof.cw_poly,
             &pi_poly,
             &alpha,
             &beta,
             &gamma,
             &fixed_base_sep_challenge,
-            &var_base_sep_challenge
+            &var_base_sep_challenge,
         )?;
 
         let t_i_polys = self.split_tx_poly(n, &t_poly);
@@ -373,8 +395,9 @@ impl<F, P, PC> Prover<F, P, PC>
                 label_polynomial!(t_i_polys[2]),
                 label_polynomial!(t_i_polys[3]),
             ],
-            None
-        ).map_err(to_pc_error::<F, PC>)?;
+            None,
+        )
+        .map_err(to_pc_error::<F, PC>)?;
 
         // Add quotient polynomial commitments to transcript
         transcript.append(b"t_1", t_commits[0].commitment());
@@ -402,12 +425,13 @@ impl<F, P, PC> Prover<F, P, PC>
             &w_r_poly,
             &w_o_poly,
             &w_4_poly,
-            &cw_poly,
+            // &cw_poly,
+            &batched_proof.cw_poly,
             &t_i_polys[0],
             &t_i_polys[1],
             &t_i_polys[2],
             &t_i_polys[3],
-            &z_poly
+            &z_poly,
         )?;
 
         // Add evaluations to transcript.
@@ -424,10 +448,14 @@ impl<F, P, PC> Prover<F, P, PC>
         transcript.append(b"perm_eval", &evaluations.perm_evals.permutation_eval);
 
         // Third, all evals needed for custom gates
-        evaluations.custom_evals.vals.iter().for_each(|(label, eval)| {
-            let static_label = Box::leak(label.to_owned().into_boxed_str());
-            transcript.append(static_label.as_bytes(), eval);
-        });
+        evaluations
+            .custom_evals
+            .vals
+            .iter()
+            .for_each(|(label, eval)| {
+                let static_label = Box::leak(label.to_owned().into_boxed_str());
+                transcript.append(static_label.as_bytes(), eval);
+            });
 
         // 5. Compute Openings using KZG10
         //
@@ -449,19 +477,27 @@ impl<F, P, PC> Prover<F, P, PC>
             label_polynomial!(prover_key.permutation.out_sigma.0.clone()),
         ];
 
-        let (aw_commits, aw_rands) = PC::commit(commit_key, &aw_polys, None).map_err(
-            to_pc_error::<F, PC>
-        )?;
+        let (aw_commits, aw_rands) =
+            PC::commit(commit_key, &aw_polys, None).map_err(to_pc_error::<F, PC>)?;
+
+        let cw_comm = label_commitment!(batched_proof.cw_comm);
 
         let aw_opening = PC::open(
             commit_key,
             aw_polys.iter().chain(w_polys.iter()).chain(cw_polys.iter()),
-            aw_commits.iter().chain(w_commits.iter()).chain(cw_comm.iter()),
+            aw_commits
+                .iter()
+                .chain(w_commits.iter())
+                .chain(std::iter::once(&cw_comm)),
             &z_challenge,
             aw_challenge,
-            aw_rands.iter().chain(w_rands.iter()).chain(cw_rand.iter()),
-            None
-        ).map_err(to_pc_error::<F, PC>)?;
+            aw_rands
+                .iter()
+                .chain(w_rands.iter())
+                .chain(std::iter::once(&batched_proof.cw_rand)),
+            None,
+        )
+        .map_err(to_pc_error::<F, PC>)?;
 
         let saw_challenge: F = transcript.challenge_scalar(b"aggregate_witness");
 
@@ -472,9 +508,8 @@ impl<F, P, PC> Prover<F, P, PC>
             label_polynomial!(w_4_poly),
         ];
 
-        let (saw_commits, saw_rands) = PC::commit(commit_key, &saw_polys, None).map_err(
-            to_pc_error::<F, PC>
-        )?;
+        let (saw_commits, saw_rands) =
+            PC::commit(commit_key, &saw_polys, None).map_err(to_pc_error::<F, PC>)?;
 
         let saw_opening = PC::open(
             commit_key,
@@ -483,8 +518,9 @@ impl<F, P, PC> Prover<F, P, PC>
             &(z_challenge * domain.element(1)),
             saw_challenge,
             &saw_rands,
-            None
-        ).map_err(to_pc_error::<F, PC>)?;
+            None,
+        )
+        .map_err(to_pc_error::<F, PC>)?;
 
         Ok((
             Proof {
@@ -493,7 +529,7 @@ impl<F, P, PC> Prover<F, P, PC>
                 c_comm: w_commits[2].commitment().clone(),
                 d_comm: w_commits[3].commitment().clone(),
                 z_comm: saw_commits[0].commitment().clone(),
-                cw_comm: cw_comm[0].commitment().clone(),
+                cw_comm: cw_comm.commitment().clone(),
                 t_1_comm: t_commits[0].commitment().clone(),
                 t_2_comm: t_commits[1].commitment().clone(),
                 t_3_comm: t_commits[2].commitment().clone(),
@@ -502,7 +538,8 @@ impl<F, P, PC> Prover<F, P, PC>
                 saw_opening,
                 evaluations,
             },
-            pd_cm,
+            // pd_cm,
+            proof_dependent_cm,
         ))
     }
 
@@ -512,26 +549,94 @@ impl<F, P, PC> Prover<F, P, PC>
     pub fn prove(
         &mut self,
         batch_commit_key: &PC::BatchCommitterKey,
-        commit_key: &PC::CommitterKey
+        opening: Option<Vec<F>>,
+        commit_key: &PC::CommitterKey,
     ) -> Result<(Proof<F, PC>, PDCommitment<F, PC>), Error> {
         if self.prover_key.is_none() {
             // Preprocess circuit and store preprocessed circuit and transcript
             // in the Prover.
-            self.prover_key = Some(
-                self.cs.preprocess_prover(
-                    commit_key,
-                    &mut self.preprocessed_transcript,
-                    PhantomData::<PC>
-                )?
-            );
+            self.prover_key = Some(self.cs.preprocess_prover(
+                commit_key,
+                &mut self.preprocessed_transcript,
+                PhantomData::<PC>,
+            )?);
         }
+
+        let domain = GeneralEvaluationDomain::new(self.cs.circuit_bound()).ok_or(
+            Error::InvalidEvalDomainSize {
+                log_size_of_group: self.cs.circuit_bound().trailing_zeros(),
+                adicity: <<F as ark_ff::FftField>::FftParams as ark_ff::FftParameters>::TWO_ADICITY,
+            },
+        )?;
+        let n = domain.size();
+
+        let (batched_proof, pd_cm) = self.proof_dep_commit(
+            &domain,
+            n,
+            commit_key,
+            batch_commit_key,
+            opening,
+            PhantomData::<PC>,
+        )?;
 
         let prover_key = self.prover_key.as_ref().unwrap();
         let (proof, pd_cm) = self.prove_with_preprocessed(
             commit_key,
-            batch_commit_key,
             prover_key,
-            PhantomData::<PC>
+            batched_proof,
+            pd_cm,
+            PhantomData::<PC>,
+        )?;
+
+        // Clear witness and reset composer variables
+        self.clear_witness();
+
+        Ok((proof, pd_cm))
+    }
+
+    /// Proves a circuit is satisfied, then clears the witness variables
+    /// If the circuit is not pre-processed, then the preprocessed circuit will
+    /// also be computed.
+    pub fn batch_pedersen_prove(
+        &mut self,
+        batch_commit_key: &PC::BatchCommitterKey,
+        opening: Option<Vec<F>>,
+        commit_key: &PC::CommitterKey,
+    ) -> Result<(Proof<F, PC>, PDCommitment<F, PC>), Error> {
+        if self.prover_key.is_none() {
+            // Preprocess circuit and store preprocessed circuit and transcript
+            // in the Prover.
+            self.prover_key = Some(self.cs.preprocess_prover(
+                commit_key,
+                &mut self.preprocessed_transcript,
+                PhantomData::<PC>,
+            )?);
+        }
+
+        let domain = GeneralEvaluationDomain::new(self.cs.circuit_bound()).ok_or(
+            Error::InvalidEvalDomainSize {
+                log_size_of_group: self.cs.circuit_bound().trailing_zeros(),
+                adicity: <<F as ark_ff::FftField>::FftParams as ark_ff::FftParameters>::TWO_ADICITY,
+            },
+        )?;
+        let n = domain.size();
+
+        let (batched_proof, pd_cm) = self.proof_dep_commit(
+            &domain,
+            n,
+            commit_key,
+            batch_commit_key,
+            opening,
+            PhantomData::<PC>,
+        )?;
+
+        let prover_key = self.prover_key.as_ref().unwrap();
+        let (proof, pd_cm) = self.prove_with_preprocessed(
+            commit_key,
+            prover_key,
+            batched_proof,
+            pd_cm,
+            PhantomData::<PC>,
         )?;
 
         // Clear witness and reset composer variables
@@ -541,9 +646,11 @@ impl<F, P, PC> Prover<F, P, PC>
     }
 }
 
-impl<F, P, PC> Default
-    for Prover<F, P, PC>
-    where F: PrimeField, P: TEModelParameters<BaseField = F>, PC: HomomorphicCommitment<F>
+impl<F, P, PC> Default for Prover<F, P, PC>
+where
+    F: PrimeField,
+    P: TEModelParameters<BaseField = F>,
+    PC: HomomorphicCommitment<F>,
 {
     #[inline]
     fn default() -> Self {
