@@ -159,7 +159,6 @@ where
     fn trim(
         pp: &Self::UniversalParams,
         supported_degree: usize,
-        circuit_bound: usize,
         supported_hiding_bound: usize,
         enforced_degree_bounds: Option<&[usize]>,
     ) -> Result<(Self::CommitterKey, Self::VerifierKey), Self::Error> {
@@ -169,10 +168,6 @@ where
 
         if supported_degree > max_degree {
             return Err(Error::TrimmingDegreeTooLarge);
-        }
-
-        if circuit_bound.is_power_of_two() == false {
-            return Err(Error::InvalidCircuitBound);
         }
 
         let enforced_degree_bounds = enforced_degree_bounds.map(|bounds| {

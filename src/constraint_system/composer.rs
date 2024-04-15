@@ -853,9 +853,7 @@ mod test {
         dummy_gadget(10, prover.mut_cs());
 
         // Commit Key
-        let (ck, vk) = PC::trim(&u_params, (2 << 6) + 6, 2 << 6, 0, None).unwrap();
-
-        let bck = PC::generate_batched_committer_key(&u_params, 2 << 6).unwrap();
+        let (ck, vk) = PC::trim(&u_params, (2 << 6) + 6, 0, None).unwrap();
 
         // Preprocess circuit
         prover.preprocess(&ck).unwrap();
@@ -866,7 +864,7 @@ mod test {
 
         // Compute multiple proofs
         for _ in 0..3 {
-            proofs.push(prover.prove(&bck, None, &ck).unwrap());
+            proofs.push(prover.prove(None, None, &ck).unwrap());
 
             // Add another witness instance
             dummy_gadget(10, prover.mut_cs());

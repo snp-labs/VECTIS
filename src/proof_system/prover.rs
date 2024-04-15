@@ -195,7 +195,8 @@ where
         domain: &GeneralEvaluationDomain<F>,
         n: usize,
         commit_key: &PC::CommitterKey,
-        batched_commit_key: &PC::BatchCommitterKey,
+        // batched_commit_key: &PC::BatchCommitterKey,
+        proof_dependent_commitment: Option<PC::Commitment>,
         opening: Option<Vec<F>>,
         _data: PhantomData<PC>,
     ) -> Result<(BatchedProof<F, PC>, PDCommitment<F, PC>), Error> {
@@ -217,12 +218,18 @@ where
         let (cw_comm, cw_rand) =
             PC::commit(commit_key, cw_polys.iter(), None).map_err(to_pc_error::<F, PC>)?;
 
-        let pd_cm = cw.get(6..).map_or(PC::Commitment::default(), |cw_slice| {
-            PC::compute_proof_dependent_cm(batched_commit_key, cw_slice.to_vec(), opening.clone())
-                .unwrap()
-                .commitment()
-                .clone()
-        });
+        // let pd_cm = cw.get(6..).map_or(PC::Commitment::default(), |cw_slice| {
+        //     PC::compute_proof_dependent_cm(batched_commit_key, cw_slice.to_vec(), opening.clone())
+        //         .unwrap()
+        //         .commitment()
+        //         .clone()
+        // });
+        let pd_cm = match proof_dependent_commitment {
+            Some(pd_cm) => {
+                pd_cm
+            }
+            None => PC::Commitment::default(),
+        };
 
         Ok((
             BatchedProof {
@@ -534,7 +541,7 @@ where
     /// also be computed.
     pub fn prove(
         &mut self,
-        batch_commit_key: &PC::BatchCommitterKey,
+        proof_dependent_commitment: Option<PC::Commitment>,
         opening: Option<Vec<F>>,
         commit_key: &PC::CommitterKey,
     ) -> Result<(Proof<F, PC>, PDCommitment<F, PC>), Error> {
@@ -560,58 +567,7 @@ where
             &domain,
             n,
             commit_key,
-            batch_commit_key,
-            opening,
-            PhantomData::<PC>,
-        )?;
-
-        let prover_key = self.prover_key.as_ref().unwrap();
-        let (proof, pd_cm) = self.prove_with_preprocessed(
-            commit_key,
-            prover_key,
-            batched_proof,
-            pd_cm,
-            PhantomData::<PC>,
-        )?;
-
-        // Clear witness and reset composer variables
-        self.clear_witness();
-
-        Ok((proof, pd_cm))
-    }
-
-    /// Proves a circuit is satisfied, then clears the witness variables
-    /// If the circuit is not pre-processed, then the preprocessed circuit will
-    /// also be computed.
-    pub fn batch_pedersen_prove(
-        &mut self,
-        batch_commit_key: &PC::BatchCommitterKey,
-        opening: Option<Vec<F>>,
-        commit_key: &PC::CommitterKey,
-    ) -> Result<(Proof<F, PC>, PDCommitment<F, PC>), Error> {
-        if self.prover_key.is_none() {
-            // Preprocess circuit and store preprocessed circuit and transcript
-            // in the Prover.
-            self.prover_key = Some(self.cs.preprocess_prover(
-                commit_key,
-                &mut self.preprocessed_transcript,
-                PhantomData::<PC>,
-            )?);
-        }
-
-        let domain = GeneralEvaluationDomain::new(self.cs.circuit_bound()).ok_or(
-            Error::InvalidEvalDomainSize {
-                log_size_of_group: self.cs.circuit_bound().trailing_zeros(),
-                adicity: <<F as ark_ff::FftField>::FftParams as ark_ff::FftParameters>::TWO_ADICITY,
-            },
-        )?;
-        let n = domain.size();
-
-        let (batched_proof, pd_cm) = self.proof_dep_commit(
-            &domain,
-            n,
-            commit_key,
-            batch_commit_key,
+            proof_dependent_commitment,
             opening,
             PhantomData::<PC>,
         )?;

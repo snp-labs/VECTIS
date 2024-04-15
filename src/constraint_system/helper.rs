@@ -59,14 +59,10 @@ where
         let (ck, _) = PC::trim(
             &universal_params,
             prover.circuit_bound() + 6,
-            prover.circuit_bound(),
             0,
             None,
         )
         .map_err(to_pc_error::<F, PC>)?;
-
-        let bck = PC::generate_batched_committer_key(&universal_params, prover.circuit_bound())
-            .map_err(to_pc_error::<F, PC>)?;
 
         // Preprocess circuit
         prover.preprocess(&ck)?;
@@ -76,7 +72,7 @@ where
         let public_inputs = prover.cs.get_pi().clone();
 
         // Compute Proof
-        (prover.prove(&bck, None, &ck)?, public_inputs)
+        (prover.prove( None, None, &ck)?, public_inputs)
     };
     // Verifiers view
     //
@@ -93,7 +89,6 @@ where
     let (ck, vk) = PC::trim(
         &universal_params,
         verifier.circuit_bound() + 6,
-        verifier.circuit_bound(),
         0,
         None,
     )

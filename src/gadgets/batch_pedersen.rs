@@ -1,15 +1,9 @@
 #[cfg(test)]
 mod test {
-    const N: usize = 4;
     use crate::{
-        circuit::verify_with_batched_proof,
-        commitment::HomomorphicCommitment,
-        constraint_system::{StandardComposer, Variable},
-        error::to_pc_error,
-        prelude::{Circuit, Error, VerifierData},
-        proof_system::{pd_cm::PDCommitment, Prover},
+        circuit::verify_with_batched_proof, commitment::HomomorphicCommitment, constraint_system::{StandardComposer, Variable}, error::to_pc_error, poly_commit::PolynomialCommitment, prelude::{Circuit, Error, VerifierData}, proof_system::{pd_cm::PDCommitment, Prover}
     };
-    use ark_bls12_377::Bls12_377;
+    // use ark_bls12_377::Bls12_377;
     use ark_bls12_381::Bls12_381;
     use ark_ec::{PairingEngine, TEModelParameters};
     use ark_ff::{FftField, PrimeField};
@@ -95,15 +89,15 @@ mod test {
         Ok(agg)
     }
 
-    // Implements a circuit that checks:
-
+    // Adjust the TestCircuit to take N dynamically
     #[derive(derivative::Derivative)]
     #[derivative(Debug(bound = ""), Default(bound = ""))]
     pub struct TestCircuit<F: FftField, P: TEModelParameters<BaseField = F>> {
         agg: [F; 2],
-        m_vec: [F; N],
-        o_vec: [F; N],
+        m_vec: Vec<F>,
+        o_vec: Vec<F>,
         rand: F,
+        batch_size: usize,
         _p: PhantomData<P>,
     }
 
@@ -130,7 +124,7 @@ mod test {
             let mut m_var_vec: Vec<Variable> = Vec::new();
             let mut o_var_vec: Vec<Variable> = Vec::new();
 
-            for i in 0..N {
+            for i in 0..self.batch_size {
                 // Committed witness : message_i
                 m_var_vec.push(composer.arithmetic_gate(|gate| {
                     gate.witness(zero, zero, None)
@@ -158,35 +152,40 @@ mod test {
         }
 
         fn padded_circuit_size(&self) -> usize {
-            1 << 6
+            1 << 21
         }
     }
 
-    fn test_batch_full<F, P, PC>() -> Result<(), Error>
+    fn test_batch_full<F, P, PC>(batch_size: usize, pp: &PC::UniversalParams) -> Result<(), Error>
     where
         F: PrimeField,
         P: TEModelParameters<BaseField = F>,
         PC: HomomorphicCommitment<F>,
         VerifierData<F, PC>: PartialEq,
     {
-        // Generate CRS
-        let pp = PC::setup(1 << 16, None, &mut test_rng()).map_err(to_pc_error::<F, PC>)?;
-
         let mut circuit = TestCircuit::<F, P>::default();
+        circuit.m_vec.resize(batch_size, F::zero());
+        circuit.o_vec.resize(batch_size, F::zero());
+        circuit.batch_size = batch_size;
 
         // Compile the circuit
         let (pk, bck, (vk, _pi_pos)) = circuit.compile::<PC>(&pp)?;
 
         // Example values
-        let m_list: Vec<F> = (0..N).map(|_| F::rand(&mut test_rng())).collect();
-        let o_list: Vec<F> = (0..N).map(|_| F::rand(&mut test_rng())).collect();
+        let m_list: Vec<F> = (0..batch_size).map(|_| F::rand(&mut test_rng())).collect();
+        let o_list: Vec<F> = (0..batch_size).map(|_| F::rand(&mut test_rng())).collect();
 
         let cm_list = PC::generate_commitment_list(bck.clone(), m_list.clone(), o_list.clone());
+
+        let prover_time = start_timer!(|| "Batch Pedersen Prover");
+        let commit_time = start_timer!(|| "Committing to commitment list and a proof-dependent commitment");
 
         let opening: Vec<F> = (0..2).map(|_| F::rand(&mut test_rng())).collect();
         let pd_cm = PC::generate_proof_dependent_commitment(&bck, &m_list, &o_list, &opening);
 
         let proof_dependent_cm: PDCommitment<F, PC> = PDCommitment { pd_cm, opening };
+
+        end_timer!(commit_time);
 
         let mut trans = Transcript::new(b"compute challenge");
 
@@ -196,12 +195,14 @@ mod test {
         let agg_o = aggregate_vector(o_list.clone(), rand);
 
         // Prover POV
+        let proof_gen_time = start_timer!(|| "Proof generation for multiple commitments");
         let (proof, pi, _cw) = {
             let mut circuit: TestCircuit<F, P> = TestCircuit {
                 agg: [agg_m, agg_o],
-                m_vec: _to_vec(m_list),
-                o_vec: _to_vec(o_list),
+                m_vec: m_list,
+                o_vec: o_list,
                 rand,
+                batch_size,
                 _p: PhantomData,
             };
 
@@ -214,15 +215,16 @@ mod test {
                 }
             }
 
-            // circuit.gen_proof::<PC>(&pp, pk, Some(proof_dependent_cm.opening.clone()), b"Test")?
             circuit.gen_proof::<PC>(
                 &pp,
                 pk,
-                Some(bck),
+                Some(proof_dependent_cm.pd_cm.clone()),
                 Some(proof_dependent_cm.opening.clone()),
                 b"Test",
             )?
         };
+        end_timer!(proof_gen_time);
+        end_timer!(prover_time);
 
         let verifier_data = VerifierData::new(vk, pi);
 
@@ -235,6 +237,7 @@ mod test {
 
         assert!(deserialized_verifier_data == verifier_data);
 
+        let verifier_time = start_timer!(|| "Batch Pedersen Verifier");
         assert!(verify_with_batched_proof::<F, P, PC>(
             &pp,
             verifier_data.key,
@@ -246,26 +249,40 @@ mod test {
         )
         .is_ok());
 
+        end_timer!(verifier_time);
+
         Ok(())
     }
 
     #[test]
     #[allow(non_snake_case)]
     fn test_batched_pedersen_full_on_Bls12_381() -> Result<(), Error> {
-        test_batch_full::<
-            <Bls12_381 as PairingEngine>::Fr,
-            ark_ed_on_bls12_381::EdwardsParameters,
-            crate::commitment::KZG10<Bls12_381>,
-        >()
+        let pp = crate::commitment::KZG10::<Bls12_381>::setup(1 << 22, None, &mut test_rng()).map_err(to_pc_error::<<Bls12_381 as PairingEngine>::Fr, crate::commitment::KZG10<Bls12_381>>)?;
+        for i in 4..=20{
+            let batch_size = 1 << i;
+            println!("\nTest for the batch size: {}\n", batch_size);
+                test_batch_full::<
+                <Bls12_381 as PairingEngine>::Fr,
+                ark_ed_on_bls12_381::EdwardsParameters,
+                crate::commitment::KZG10<Bls12_381>,
+            >(batch_size, &pp)?
+        }
+        Ok(())
     }
 
-    #[test]
-    #[allow(non_snake_case)]
-    fn test_batched_pedersen_full_on_Bls12_377() -> Result<(), Error> {
-        test_batch_full::<
-            <Bls12_377 as PairingEngine>::Fr,
-            ark_ed_on_bls12_377::EdwardsParameters,
-            crate::commitment::KZG10<Bls12_377>,
-        >()
-    }
+    // #[test]
+    // #[allow(non_snake_case)]
+    // fn test_batched_pedersen_full_on_Bls12_377() -> Result<(), Error> {
+    //     let pp = crate::commitment::KZG10::<Bls12_377>::setup(1 << 20, None, &mut test_rng()).map_err(to_pc_error::<<Bls12_377 as PairingEngine>::Fr, crate::commitment::KZG10<Bls12_377>>)?;
+    //     for i in 4..=20 {
+    //         let batch_size = 1 << i;
+    //         println!("Test for the batch size: {}\n", batch_size);
+    //         test_batch_full::<
+    //         <Bls12_377 as PairingEngine>::Fr,
+    //         ark_ed_on_bls12_377::EdwardsParameters,
+    //         crate::commitment::KZG10<Bls12_377>,
+    //         >(batch_size, &pp)?
+    //     }
+    //     Ok(())
+    // }
 }

@@ -138,11 +138,9 @@ pub trait PolynomialCommitment<F: Field, P: Polynomial<F>>: Sized {
     fn trim(
         pp: &Self::UniversalParams,
         supported_degree: usize,
-        circuit_bound: usize,
         supported_hiding_bound: usize,
         enforced_degree_bounds: Option<&[usize]>,
     ) -> Result<(Self::CommitterKey, Self::VerifierKey), Self::Error>;
-    // ) -> Result<(Self::CommitterKey, Self::BatchCommitterKey, Self::VerifierKey), Self::Error>;
 
     /// Outputs a commitments to `polynomials`. If `polynomials[i].is_hiding()`,
     /// then the `i`-th commitment is hiding up to `polynomials.hiding_bound()` queries.
@@ -704,7 +702,6 @@ pub mod tests {
                 max_degree >= supported_degree,
                 "max_degree < supported_degree"
             );
-            let circuit_bound: usize = supported_degree.next_power_of_two() >> 1;
 
             let mut labels = Vec::new();
             let mut polynomials = Vec::new();
@@ -732,12 +729,10 @@ pub mod tests {
                 .unwrap_or(0);
             println!("supported degree: {:?}", supported_degree);
             println!("supported hiding bound: {:?}", supported_hiding_bound);
-            println!("circuit bound: {:?}", circuit_bound);
 
             let (ck, vk) = PC::trim(
                 &pp,
                 supported_degree,
-                circuit_bound,
                 supported_hiding_bound,
                 Some(degree_bounds.as_slice()),
             )?;
@@ -863,7 +858,6 @@ pub mod tests {
             let (ck, vk) = PC::trim(
                 &pp,
                 supported_degree,
-                circuit_bound,
                 supported_hiding_bound,
                 degree_bounds.as_ref().map(|s| s.as_slice()),
             )?;
@@ -952,7 +946,6 @@ pub mod tests {
                 max_degree >= supported_degree,
                 "max_degree < supported_degree"
             );
-            let circuit_bound: usize = core::cmp::max(supported_degree.next_power_of_two() >> 1, 1);
 
             let mut polynomials = Vec::new();
             let mut degree_bounds = if enforce_degree_bounds {
@@ -1005,9 +998,7 @@ pub mod tests {
 
             let (ck, vk) = PC::trim(
                 &pp,
-                // supported_degree + 6,
                 supported_degree,
-                circuit_bound,
                 supported_degree,
                 degree_bounds.as_ref().map(|s| s.as_slice()),
             )?;

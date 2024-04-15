@@ -235,7 +235,7 @@ where
     {
         // Setup PublicParams
         let circuit_size = self.padded_circuit_size() + 6;
-        let (ck, _) = PC::trim(u_params, circuit_size, self.padded_circuit_size(), 0, None)
+        let (ck, _) = PC::trim(u_params, circuit_size, 0, None)
             .map_err(to_pc_error::<F, PC>)?;
 
         //Generate & save `ProverKey` with some random values.
@@ -276,7 +276,7 @@ where
         &mut self,
         u_params: &PC::UniversalParams,
         prover_key: ProverKey<F>,
-        batched_committer_key: Option<PC::BatchCommitterKey>,
+        proof_dependent_commitment: Option<PC::Commitment>,
         opening: Option<Vec<F>>,
         transcript_init: &'static [u8],
     ) -> Result<(Proof<F, PC>, PublicInputs<F>, CommittedWitness<F>), Error>
@@ -286,14 +286,8 @@ where
         PC: HomomorphicCommitment<F>,
     {
         let circuit_size = self.padded_circuit_size() + 6;
-        let (ck, _) = PC::trim(u_params, circuit_size, self.padded_circuit_size(), 0, None)
+        let (ck, _) = PC::trim(u_params, circuit_size, 0, None)
             .map_err(to_pc_error::<F, PC>)?;
-
-        let bck = match batched_committer_key {
-            Some(bck) => bck,
-            None => PC::generate_batched_committer_key(u_params, self.padded_circuit_size())
-                .map_err(to_pc_error::<F, PC>)?,
-        };
 
         // New Prover instance
         let mut prover = Prover::new(transcript_init);
@@ -304,7 +298,7 @@ where
         let pi = prover.cs.get_pi().clone();
         let cw = prover.cs.get_cw().clone();
 
-        Ok((prover.prove(&bck, opening, &ck)?.0, pi, cw))
+        Ok((prover.prove(proof_dependent_commitment, opening, &ck)?.0, pi, cw))
     }
 
     /// Returns the Circuit size padded to the next power of two.
@@ -331,7 +325,6 @@ where
     let (_, vk) = PC::trim(
         u_params,
         padded_circuit_size,
-        plonk_verifier_key.padded_circuit_size(),
         0,
         None,
     )
@@ -362,7 +355,6 @@ where
     let (_, vk) = PC::trim(
         u_params,
         padded_circuit_size,
-        plonk_verifier_key.padded_circuit_size(),
         0,
         None,
     )
