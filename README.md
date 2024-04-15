@@ -1,1 +1,1 @@
-# PLONK Core Library
+# Batch cc-SNARK
