@@ -1,0 +1,22 @@
+{
+  "name": "batch-cc-snark",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "mocha"
+  },
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "@nomicfoundation/hardhat-ethers": "^3.0.5",
+    "@nomicfoundation/hardhat-toolbox": "^5.0.0",
+    "hardhat": "^2.22.3",
+    "chai": "^4.4.1",
+    "mocha": "^10.4.0",
+    "web3": "^1.10.3"
+  },
+  "dependencies": {
+    "web3-utils": "^4.2.3"
+  }
+}
