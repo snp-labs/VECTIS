@@ -1,8 +1,7 @@
 const fs = require('fs');
-const type = require("../../test/type");
-require("@nomicfoundation/hardhat-ethers/signers");
-
-const calculateTPS = true;
+const type = require("../test/type");
+const { ethers } = require('hardhat');
+require("@nomicfoundation/hardhat-ethers");
 
 async function tps(signer, contractInstance, instance, proof) {
   const txCount = 10;
@@ -12,15 +11,13 @@ async function tps(signer, contractInstance, instance, proof) {
   let rawTx = [];
 
   for(let i = 0; i < txCount; i++) {
-    let d = await contractInstance.populateTransaction.verify(instance, proof);
+    // let d = await contractInstance.populateTransaction.verify(instance, proof);
+    let d = await contractInstance.populate
     let r = await signer.sendTransaction(d);
     data.push(d);
     receipt.push(r);
     rawTx.push(r.raw);
   }
-
-  
-  console.log("TPS:", txCount / deltaTime);
 }
 
 async function main() {
@@ -31,12 +28,10 @@ async function main() {
   const cpLinkVerifyBn128 = await ethers.getContractFactory("cpLinkVerifyBn128");
   const CpLinkVerifyBn128 = await cpLinkVerifyBn128.deploy(vk);
 
-  const tmp = await cpLinkVerifyBn128.deploy(vk);
-
-  if (calculateTPS) {
-    const contractInstance = CpLinkVerifyBn128.connect(deployer);
-    await tps(deployer, contractInstance, instance, proof);
-  }
+  
+  const contractInstance = CpLinkVerifyBn128.connect(deployer);
+  await tps(deployer, contractInstance, instance, proof);
+  
 }
 
 main()

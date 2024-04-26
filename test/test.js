@@ -1,7 +1,5 @@
 const fs = require('fs');
 const type = require("./type");
-const Web3 = require("web3");
-const Web3Utils = require("web3-utils");
 const { expect } = require("chai");
 
 
@@ -38,6 +36,41 @@ describe("cpLinkVerify", function () {
     writeToLog(logMessage);
     const tmp = await verify.deploy(vk);
     const check = await tmp.verify(instance, proof);
+    // console.log("check: ", check);
+  });
+});
+
+describe("cpLinkVerify", function () {
+  it("_verifyLS should return true", async function () {
+
+    async function tps(signer, contractInstance, instance, proof) {
+      const txCount = 10;
+    
+      let data = [];
+      let receipt = [];
+      let rawTx = [];
+    
+      for(let i = 0; i < txCount; i++) {
+        // let d = await contractInstance.populateTransaction.verify(instance, proof);
+        let d = await contractInstance.populate
+        let r = await signer.sendTransaction(d);
+        data.push(d);
+        receipt.push(r);
+        rawTx.push(r.raw);
+      }
+    }
+
+    const logSize = 2;
+    const logFilePath = './test/mockDataLog.txt'; 
+
+
+
+    const [vk, instance, proof]= await type.verifierInputToBN(1 << logSize);
+    const verify = await ethers.getContractFactory("cpLinkVerify");
+    
+    const tmp = await verify.deploy(vk);
+    const check = await tmp.verify(instance, proof);
+    
     // console.log("check: ", check);
   });
 });
