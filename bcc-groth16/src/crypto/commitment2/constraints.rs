@@ -1,15 +1,7 @@
 use super::Commitment;
 use ark_ff::PrimeField;
-use ark_r1cs_std::{
-    eq::EqGadget,
-    fields::fp::{AllocatedFp, FpVar},
-    impl_bounded_ops, impl_ops,
-    prelude::*,
-};
-use ark_relations::{
-    lc,
-    r1cs::{ConstraintSystemRef, SynthesisError},
-};
+use ark_r1cs_std::{eq::EqGadget, fields::fp::FpVar, prelude::*};
+use ark_relations::r1cs::SynthesisError;
 use ark_std::{
     iter::Sum,
     ops::{Mul, MulAssign},

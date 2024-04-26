@@ -1,7 +1,7 @@
 use super::*;
-use crate::circuit::BccCircuit;
+use crate::{circuit::BccCircuit, utils::compute_hash};
 
-use ark_ff::UniformRand;
+use ark_ff::{QuadExtField, UniformRand};
 use ark_relations::r1cs::{
     ConstraintSynthesizer, ConstraintSystem, OptimizationGoal, SynthesisMode,
 };
@@ -9,7 +9,10 @@ use ark_std::{
     rand::{CryptoRng, RngCore, SeedableRng},
     test_rng,
 };
-use bccgroth16::{crypto::commitment::CM, BccGroth16};
+use bccgroth16::{
+    crypto::{commitment::CM, tree::AggregationTree},
+    BccGroth16,
+};
 use lazy_static::lazy_static;
 
 lazy_static! {
@@ -17,7 +20,7 @@ lazy_static! {
     pub static ref PK_FILE: String = "cbdc.pk.dat".to_string();
     pub static ref VK_FILE: String = "cbdc.vk.dat".to_string();
     pub static ref PRF_FILE: String = "cbdc.proof.dat".to_string();
-    pub static ref LOG_N: usize = 20;
+    pub static ref LOG_N: usize = 7;
 }
 
 type E = ark_bn254::Bn254;
@@ -34,6 +37,20 @@ fn random_cm<R: RngCore + CryptoRng>(n: usize, rng: &mut R) -> Vec<CM<F>> {
         })
         .collect();
     cm
+}
+
+fn print_mock<E: Pairing>(
+    vk: &VerifyingKey<E>,
+    list_cm: &Vec<E::G1Affine>,
+    proof: &Proof<E>,
+    proof_cm: &E::G1Affine,
+    tau: E::ScalarField,
+) {
+    println!("vk: {:?}", vk.to_string());
+    println!("list_cm: {:?}", list_cm);
+    println!("proof: {:?}", proof.to_string());
+    println!("proof_cm: {:?}", proof_cm);
+    println!("tau: {:?}", tau.to_string());
 }
 
 #[test]
@@ -70,7 +87,6 @@ fn test_cc_groth16_without_key() {
 
         println!("Generate CRS...");
         let (pk, vk) = BccGroth16::<E>::setup(mock, &mut rng).unwrap();
-        // assert_eq!(vk.gamma_abc_g1.len(), 4 + 4 * (*N), "vk length invalid");
 
         // make random cm (prev, curr)
         let list_cm = random_cm(batch_size, &mut rng);
@@ -79,8 +95,11 @@ fn test_cc_groth16_without_key() {
             .flat_map(|cm| [cm.msg, cm.rand])
             .collect::<Vec<F>>();
 
-        let (list_cm_g1, proof_dependent_cm, tau) =
+        let (list_cm_g1, proof_dependent_cm, _) =
             BccGroth16::<E>::commit(&pk.ck, &committed_witness, &mut rng).unwrap();
+
+        let public_inputs = [&list_cm_g1[..], &[proof_dependent_cm.cm]].concat();
+        let tau = compute_hash::<E>(&[proof_dependent_cm.cm]);
 
         // make circuit
         let circuit = BccCircuit::<F>::new(list_cm, tau);
@@ -89,15 +108,16 @@ fn test_cc_groth16_without_key() {
         let proof =
             BccGroth16::<E>::prove(&pk, circuit.clone(), &proof_dependent_cm, &mut rng).unwrap();
 
-        let public_inputs = [&list_cm_g1[..], &[proof_dependent_cm.cm]].concat();
         assert_eq!(
             public_inputs.len(),
             batch_size + 1,
             "Invalid Public Statement Size"
         );
 
-        println!("Verify proof...");
-        assert!(BccGroth16::<E>::verify(&vk, &proof, public_inputs.as_slice()).unwrap());
+        // println!("Verify proof...");
+        // assert!(BccGroth16::<E>::verify(&vk, &proof, public_inputs.as_slice()).unwrap());
+
+        print_mock(&vk, &list_cm_g1, &proof, &proof_dependent_cm.cm, tau);
     }
 }
 

@@ -1,5 +1,4 @@
 use ark_ec::{pairing::Pairing, AffineRepr, CurveGroup};
-use ark_serialize::Read;
 use ark_serialize::*;
 use ark_std::vec::Vec;
 use core::ops::Neg;

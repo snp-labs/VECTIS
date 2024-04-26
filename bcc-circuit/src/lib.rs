@@ -144,18 +144,6 @@ pub extern "C" fn prove_bn254(
 }
 
 #[no_mangle]
-pub extern "C" fn get_proof_bn254(proof_path: *const c_char) -> *mut c_char {
-    // Path prefix
-    let path = str_from_c_str(proof_path);
-    let prf_file = format!("{}{}", path, PRF_FILE.as_str());
-
-    let proof = Proof::<E>::from(prf_file);
-    let c_string_proof = CString::new(proof.to_string()).expect("CString::new failed");
-
-    c_string_proof.into_raw()
-}
-
-#[no_mangle]
 pub extern "C" fn compute_cm_bn254(
     hex_m_ptr: *const c_char,
     hex_r_ptr: *const c_char,
@@ -169,77 +157,4 @@ pub extern "C" fn compute_cm_bn254(
 
     let cm_c_char = CString::new(format!("({}, {})", cm.x, cm.y).as_str()).expect("cm failed");
     cm_c_char.into_raw()
-}
-
-#[cfg(test)]
-mod lib_tests {
-    use super::*;
-    use crate::setup_bn254;
-    const PATH: &str = "./";
-    const N: usize = 8;
-
-    #[test]
-    fn setup_prove_test() {
-        let c_path = CString::new(PATH).unwrap();
-        let c_path = c_path.as_ptr();
-
-        let is_success = setup_bn254(c_path, N);
-        assert!(is_success);
-
-        let vec = vec!["1"; N];
-
-        let vec_string = vec.join(",");
-        let vec_ptr = CString::new(vec_string).unwrap();
-        let vec_ptr = vec_ptr.as_ptr();
-        let proof = prove_bn254(c_path, vec_ptr, vec_ptr);
-        let proof = str_from_c_str(proof);
-        assert!(!proof.is_empty());
-
-        let obtained_proof = get_proof_bn254(c_path);
-        let obtained_proof = str_from_c_str(obtained_proof);
-        assert_eq!(proof, obtained_proof);
-
-        let vk = get_vk_bn254(c_path);
-        let vk = str_from_c_str(vk);
-        assert!(!vk.is_empty());
-    }
-
-    #[test]
-    fn setup_init_prove_test() {
-        let c_path = CString::new(PATH).unwrap();
-        let c_path = c_path.as_ptr();
-
-        let is_success = setup_bn254(c_path, N);
-        assert!(is_success);
-
-        let is_success = init_bn254(c_path);
-        assert!(is_success);
-
-        let vec = vec!["1"; N];
-        let vec_string = vec.join(",");
-        let vec_ptr = CString::new(vec_string).unwrap();
-        let vec_ptr = vec_ptr.as_ptr();
-        let proof = prove_bn254(c_path, vec_ptr, vec_ptr);
-        let proof = str_from_c_str(proof);
-        assert!(!proof.is_empty());
-
-        let obtained_proof = get_proof_bn254(c_path);
-        let obtained_proof = str_from_c_str(obtained_proof);
-        assert_eq!(proof, obtained_proof);
-
-        let vk = get_vk_bn254(c_path);
-        let vk = str_from_c_str(vk);
-        assert!(!vk.is_empty());
-    }
-
-    // 수정 필요
-    // #[test]
-    // fn compute_cm_bn254_test() {
-    //     let hex = CString::new("0x123").unwrap();
-    //     let hex = hex.as_ptr();
-    //     let cm = compute_cm_bn254(hex, hex);
-    //     let cm = str_from_c_str(cm);
-    //     let expected_cm = "(6466513494921947375569267478814063536154272582123927482381877901754572934391, 6126728972616263110126865122705165162529680719771750131682365931647554952432)";
-    //     assert_eq!(cm, expected_cm);
-    // }
 }
