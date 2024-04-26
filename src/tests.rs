@@ -1,15 +1,14 @@
 use crate::{
-    create_random_proof_incl_cp_link, generate_random_parameters_incl_cp_link,
-    prepare_verifying_key, verify_proof_incl_cp_link, LinkPublicGenerators,
+    create_random_proof_incl_cp_link, generate_random_parameters_incl_cp_link, prepare_verifying_key, verify_proof_incl_cp_link, Commitments, LinkPublicGenerators
 };
 use ark_ec::{pairing::Pairing, CurveGroup};
-use ark_ff::Field;
+use ark_ff::{Field, PrimeField};
 use ark_relations::r1cs::{ConstraintSynthesizer, ConstraintSystemRef, SynthesisError,
 };
 use ark_std::{
-    rand::{rngs::StdRng, RngCore, SeedableRng},
-    UniformRand,
+    end_timer, rand::{rngs::StdRng, RngCore, SeedableRng}, start_timer, UniformRand
 };
+use ark_ec::VariableBaseMSM;
 
 /// Circuit for Pedersen commitment, in which `a` is a meesage
 #[derive(Clone)]
@@ -83,15 +82,39 @@ where
         // Randomness for the committed witness in CP_link
         let link_v = E::ScalarField::rand(&mut rng);
 
-        let circuit = PedersenCircuit { m };
+        let circuit = PedersenCircuit { m : m.clone() };
 
         // Create a LegoGro16 proof with CP_link.
         let proof_link =
             create_random_proof_incl_cp_link(circuit.clone(), v, link_v, &params_link, &mut rng)
                 .unwrap();
 
+    
+        let message_and_opening: Vec<Vec<<E::ScalarField as PrimeField>::BigInt>> = m
+            .iter()
+            .map(|w| {
+                let mut _v = Vec::new();
+                _v.push(w.unwrap().into_bigint());
+                _v.push(link_v.into_bigint());
+                _v
+            })
+            .collect();
+    
+        let mut link_com: Vec<E::G1Affine> = Vec::new();
+
+        for e in message_and_opening.iter() {
+            link_com.push(E::G1::msm_bigint(&params_link.vk.link_bases, e).into_affine());
+        }
+
+        let commitments = Commitments {
+            link_com,
+            proof_dependent_com: proof_link.groth16_proof.d
+        };
+
         // Verify LegoGroth16 proof and CP_link proof
-        verify_proof_incl_cp_link(&pvk_link, &params_link.vk, &proof_link, &[]).unwrap();
+        let verifier_time = start_timer!(|| "LegoGroth16::Verifier");
+        verify_proof_incl_cp_link(&pvk_link, &params_link.vk, &proof_link, &commitments, &[]).unwrap();
+        end_timer!(verifier_time);
     }
 
     run::<E>(tc);
@@ -115,7 +138,8 @@ mod bls12_381 {
 
     #[test]
     fn prove_and_verify() {
-        for i in 0..20 {
+        for i in 0..21 {
+            println!("\nBatch size: {:?}\n", 1 << i);
             test_prove_and_verify::<Bls12_381>(1 << i);
         }
     }

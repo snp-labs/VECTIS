@@ -20,11 +20,16 @@ pub struct Proof<E: Pairing> {
 #[derive(Clone, Debug, PartialEq, CanonicalSerialize, CanonicalDeserialize)]
 pub struct ProofWithLink<E: Pairing> {
     pub groth16_proof: Proof<E>,
-    /// cp_{link}
-    // pub link_d: E::G1Affine,
-    pub link_d: Vec<E::G1Affine>,
     /// proof of commitment opening equality between `cp_{link}` and `d`
     pub link_pi: E::G1Affine,
+}
+
+/// Commitment
+#[derive(Clone, Debug, PartialEq, CanonicalSerialize, CanonicalDeserialize)]
+pub struct Commitments<E: Pairing> {
+    pub link_com: Vec<E::G1Affine>,
+
+    pub proof_dependent_com: E::G1Affine
 }
 
 impl<E: Pairing> Default for Proof<E> {
@@ -43,11 +48,19 @@ impl<E: Pairing> Default for ProofWithLink<E> {
         Self {
             groth16_proof: Proof::default(),
             link_pi: E::G1Affine::default(),
-            // link_d: E::G1Affine::default(),
-            link_d: Vec::default(),
         }
     }
 }
+
+impl<E: Pairing> Default for Commitments<E> {
+    fn default() -> Self {
+        Self {
+            link_com: Vec::default(),
+            proof_dependent_com: E::G1Affine::default()
+        }
+    }
+}
+
 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////

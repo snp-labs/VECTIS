@@ -1,4 +1,4 @@
-use crate::link::{PESubspaceSnark, SubspaceSnark};
+use crate::{link::{PESubspaceSnark, SubspaceSnark}, Commitments};
 use ark_ec::{pairing::Pairing, AffineRepr, CurveGroup};
 use ark_ff::{One, PrimeField};
 
@@ -8,7 +8,7 @@ use ark_relations::r1cs::SynthesisError;
 
 use crate::{error::Error, Proof, VerifyingKey};
 use ark_ec::VariableBaseMSM;
-use ark_std::{cfg_iter, vec::Vec};
+use ark_std::{cfg_iter, end_timer, start_timer, vec::Vec};
 use core::ops::{AddAssign, Neg};
 
 #[cfg(feature = "parallel")]
@@ -52,12 +52,9 @@ pub fn prepare_inputs<E: Pairing>(
 /// Verify the proof of the Subspace Snark on the equality of openings of cp_link and proof.d
 pub fn verify_link_proof<E: Pairing>(
     vk: &VerifyingKeyWithLink<E>,
+    commitments: Vec<E::G1Affine>,
     proof: &ProofWithLink<E>,
 ) -> crate::Result<()> {
-    // let commitments = vec![proof.link_d.clone(), proof.groth16_proof.d.clone()];
-    let mut commitments = proof.link_d.clone();
-    commitments.push(proof.groth16_proof.d);
-    // let commitments = vec![proof.link_d.clone(), proof.groth16_proof.d.clone()];
     PESubspaceSnark::<E>::verify(&vk.link_pp, &vk.link_vk, &commitments, &proof.link_pi)
         .map_err(|e| e.into())
 }
@@ -116,8 +113,15 @@ pub fn verify_proof_incl_cp_link<E: Pairing>(
     pvk: &PreparedVerifyingKey<E>,
     vk: &VerifyingKeyWithLink<E>,
     proof: &ProofWithLink<E>,
+    commitments: &Commitments<E>,
     public_inputs: &[E::ScalarField],
 ) -> crate::Result<()> {
-    verify_link_proof(vk, proof)?;
+    
+    let mut cms = commitments.link_com.clone();
+    
+    cms.push(commitments.proof_dependent_com);
+    let link_verifier_time = start_timer!(|| "CPLink::Verifier");
+    verify_link_proof(vk, cms, proof)?;
+    end_timer!(link_verifier_time);
     verify_proof(pvk, &proof.groth16_proof, public_inputs)
 }

@@ -206,22 +206,6 @@ where
         witness_assignment,
     )?;
 
-    let each_comm_wit_with_link_hider: Vec<Vec<<E::ScalarField as PrimeField>::BigInt>> = comm_wits
-        .iter()
-        .map(|w| {
-            let mut _v = Vec::new();
-            _v.push(w.into_bigint());
-            _v.push(link_v.into_bigint());
-            _v
-        })
-        .collect();
-
-    let mut link_instance: Vec<E::G1Affine> = Vec::new();
-
-    for e in each_comm_wit_with_link_hider.iter() {
-        link_instance.push(E::G1::msm_bigint(&pk.vk.link_bases, e).into_affine());
-    }
-
     let mut ss_snark_witness = comm_wits;
     ss_snark_witness.push(link_v);
     ss_snark_witness.push(v);
@@ -231,12 +215,10 @@ where
 
     end_timer!(link_time);
 
-    drop(each_comm_wit_with_link_hider);
     drop(ss_snark_witness);
 
     Ok(ProofWithLink {
         groth16_proof: proof,
-        link_d: link_instance,
         link_pi,
     })
 }
