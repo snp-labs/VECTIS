@@ -20,4 +20,8 @@
 .history
 .ionide
 
+./node_modules
+./cache
+./artifacts
+
 # End of https://www.toptal.com/developers/gitignore/api/rust,visualstudiocode

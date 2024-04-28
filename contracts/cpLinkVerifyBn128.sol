@@ -1,137 +1,88 @@
 // SPDX-License-Identifier: LGPL-3.0+
 pragma solidity >=0.8.0;
+import "hardhat/console.sol";
 
 library cpLinkVerifyBn128 {
-    function _verifyLS(
-        // BN128에서 G1: uint256[2], G2: uint256[4]
+    // Instance:
+    //      uint256[(l+1)*2]   x    : G_1
+    //      # of total (l+1) * 2
 
-        uint256[] storage vk,       // ([C]_2, [a]_2) ∈ G2^l & G2
-        uint256[] memory instance,  // [x]_1 ∈ G1^l
-        uint256[] memory proof      // [π]_1 ∈ G1
+    // VerifyingKey :
+    //      uint256[(l + 1)*4] C    : G_2
+    //      uint256[4]         a    : G_2 (minus)
+    //      # of total (l+1) * 4 + 4
+
+    // Proof :
+    //      uint256[2] pi    : G_1
+
+    // Verification equation:
+    //      x*C = pi*a
+    //      x*c - pi*a = 0
+    function _verifyLS(
+        uint256[] storage vk, // ([C]_2, [a]_2) ∈ G2^{l+1} & G2
+        uint256[] memory instance, // [x]_1 ∈ G1^{l+1} -> [cmList, cm']
+        uint256[] memory proof // [π]_1 ∈ G1
     ) internal returns (bool) {
-        // // ct.length = 64 * 2 = 128 + cm in cc_groth.prove / proof.length = 2 / vk.length = 65 * 4 + 4(vk2)
-        // require(proof.length == 4, "[Error] Invalid proof length"); 
-        // require(
-        //     vk.length == 2 * instance.length + 8, // vk는 G2라 vk 중 C의 길이는 instance의 2배 & [a]_2 ∈ G2 ...?
-        //     "[Error] Invalid instance length"
-        // );
         uint256[1] memory out;
         bool success;
+
         uint256 vk_slot_num;
-
-        uint256 len = instance.length / 2;
-
-        uint256[] memory inputs = new uint256[](6 * len + 6); // [x, vk1, pf, -vk2] (x ∈ G1^l, vk ∈ G2^l, pf ∈ G1)
+        uint256 vk_offset;
+        uint256 a_offset;
+        uint256 len = instance.length / 2; // l + 1
+        uint256[] memory inputs = new uint256[](6 * (len + 1)); // [x, vk1, pf, -vk2] (x ∈ G1^l, vk ∈ G2^l, pf ∈ G1)
 
         assembly {
-            let proof_i := add(proof, 0x20)
             let instance_i := add(instance, 0x20)
-
             mstore(inputs, vk.slot)
             vk_slot_num := keccak256(inputs, 0x20)
 
             for {
                 let i := 0
-            } lt(i, sub(len, 1)) {
+            } lt(i, len) {
                 i := add(i, 1)
             } {
+                let offset := mul(i, 0xc0)
+                vk_offset := add(vk_slot_num, mul(i, 4))
+
                 mstore(
-                    add(mul(i, 0xc0), inputs),
+                    add(offset, inputs),
                     mload(add(mul(i, 0x40), instance_i))
-                ) // ct[i].X
-
+                ) //cm[i].X
                 mstore(
-                    add(add(mul(i, 0xc0), 0x20), inputs),
+                    add(add(offset, 0x20), inputs),
                     mload(add(add(mul(i, 0x40), 0x20), instance_i))
-                ) // ct[i].Y
+                ) // cm[i].Y
 
-                mstore(
-                    add(add(mul(i, 0xc0), 0x40), inputs),
-                    sload(add(vk_slot_num, mul(i, 4)))
-                ) // vk1[i].X1
-
-                mstore(
-                    add(add(mul(i, 0xc0), 0x60), inputs),
-                    sload(add(vk_slot_num, add(mul(i, 4), 1)))
-                ) // vk1[i].Y2
-
-                mstore(
-                    add(add(mul(i, 0xc0), 0x80), inputs),
-                    sload(add(vk_slot_num, add(mul(i, 4), 2)))
-                ) // vk1[i].Y3
-
-                mstore(
-                    add(add(mul(i, 0xc0), 0xa0), inputs),
-                    sload(add(vk_slot_num, add(mul(i, 4), 3)))
-                ) // vk1[i].Y4
+                mstore(add(add(offset, 0x40), inputs), sload(vk_offset)) // C[i].X1
+                mstore(add(add(offset, 0x60), inputs), sload(add(vk_offset, 1))) // C[i].Y1
+                mstore(add(add(offset, 0x80), inputs), sload(add(vk_offset, 2))) // C[i].X2
+                mstore(add(add(offset, 0xa0), inputs), sload(add(vk_offset, 3))) // C[i].Y2
             }
 
-            mstore(sub(add(mul(len, 0xc0), inputs), 0xc0), mload(proof_i)) // cm.X
+            let proof_i := add(proof, 0x20)
+            let offset := mul(len, 0xc0)
+            mstore(add(offset, inputs), mload(proof_i)) // π.X
+            mstore(add(add(offset, 0x20), inputs), mload(add(proof_i, 0x20))) // π.Y
 
-            mstore(
-                sub(add(mul(len, 0xc0), inputs), 0xa0),
-                mload(add(proof_i, 0x20))
-            ) // cm.Y
+            a_offset := add(vk_slot_num, mul(len, 4))
+            mstore(add(add(offset, 0x40), inputs), sload(a_offset)) // -a.X1
+            mstore(add(add(offset, 0x60), inputs), sload(add(a_offset, 1))) // -a.Y1
+            mstore(add(add(offset, 0x80), inputs), sload(add(a_offset, 2))) // -a.X2
+            mstore(add(add(offset, 0xa0), inputs), sload(add(a_offset, 3))) // -a.Y2
 
-            mstore(
-                sub(add(mul(len, 0xc0), inputs), 0x80),
-                sload(add(vk_slot_num, sub(mul(len, 4), 4)))
-            ) // vk1[last].X1
-
-            mstore(
-                sub(add(mul(len, 0xc0), inputs), 0x60),
-                sload(add(vk_slot_num, sub(mul(len, 4), 3)))
-            ) // vk1[last].Y2
-
-            mstore(
-                sub(add(mul(len, 0xc0), inputs), 0x40),
-                sload(add(vk_slot_num, sub(mul(len, 4), 2)))
-            ) //vk1[last].Y3
-
-            mstore(
-                sub(add(mul(len, 0xc0), inputs), 0x20),
-                sload(add(vk_slot_num, sub(mul(len, 4), 1)))
-            ) //vk1[last].Y4
-
-            mstore(add(mul(len, 0xc0), inputs), mload(add(proof_i, 0x40))) // pi.X
-
-            mstore(
-                add(add(mul(len, 0xc0), 0x20), inputs),
-                mload(add(proof_i, 0x60))
-            ) // pi.Y
-
-            mstore(
-                add(add(mul(len, 0xc0), 0x40), inputs),
-                sload(add(vk_slot_num, mul(len, 4)))
-            ) // -vk2.X1
-
-            mstore(
-                add(add(mul(len, 0xc0), 0x60), inputs),
-                sload(add(vk_slot_num, add(mul(len, 4), 1)))
-            ) // -vk2.Y2
-
-            mstore(
-                add(add(mul(len, 0xc0), 0x80), inputs),
-                sload(add(vk_slot_num, add(mul(len, 4), 2)))
-            ) // -vk2.Y3
-
-            mstore(
-                add(add(mul(len, 0xc0), 0xa0), inputs),
-                sload(add(vk_slot_num, add(mul(len, 4), 3)))
-            ) // -vk2.Y4
-
-            success := call(
+            success := staticcall(
                 sub(gas(), 2000),
-                0x08, 
-                0,
+                0x08, // Precompile address for Bn256 pairing
                 inputs,
-                mul(add(len, 1), 0xc0),
+                mul(add(len, 1), 0xc0), // Input size
                 out,
-                0x20
-            ) // Pairing check e(x^t, vk_1) == e(pi, vk_1) where vk_1 = a*k
+                0x20 // Output size
+            )
         }
-        require(!success, "Pairing Failed");
+        // Pairing check e(x^t, vk_1) == e(pi, vk_1) where vk_1 = a*k
+        require(success, "CPLink Pairing failed"); // Ensure pairing was successful
 
-        return out[0] == 0;
+        return out[0] == 1; // Verification check
     }
 }
