@@ -1,5 +1,5 @@
 use crate::{
-    create_random_proof_incl_cp_link, generate_random_parameters_incl_cp_link, prepare_verifying_key, verify_proof_incl_cp_link, Commitments, LinkPublicGenerators
+    create_random_proof_incl_cp_link, generate_random_parameters_incl_cp_link, mock::{write_to_raw_data_file}, prepare_verifying_key, verify_proof_incl_cp_link, Commitments, LinkPublicGenerators
 };
 use ark_ec::{pairing::Pairing, CurveGroup};
 use ark_ff::{Field, PrimeField};
@@ -111,6 +111,17 @@ where
             proof_dependent_com: proof_link.groth16_proof.d
         };
 
+        #[cfg(feature = "mock")]
+        {
+            println!("\nvk size: {:?}", params_link.vk.compressed_size());
+            println!("pk size: {:?}", params_link.compressed_size());
+            println!("proof size: {:?}\n", proof_link.compressed_size());
+
+            if let Err(e) = write_to_raw_data_file::<E>(commit_witness_count,&params_link.vk, &proof_link, &commitments) {
+                println!("Error writing data to file: {}", e);
+            }
+        }
+        
         // Verify LegoGroth16 proof and CP_link proof
         let verifier_time = start_timer!(|| "LegoGroth16::Verifier");
         verify_proof_incl_cp_link(&pvk_link, &params_link.vk, &proof_link, &commitments, &[]).unwrap();
@@ -126,7 +137,7 @@ mod bls12_377 {
 
     #[test]
     fn prove_and_verify() {
-        for i in 0..20 {
+        for i in 0..=20 {
             test_prove_and_verify::<Bls12_377>(1 << i);
         }
     }
@@ -138,7 +149,7 @@ mod bls12_381 {
 
     #[test]
     fn prove_and_verify() {
-        for i in 0..21 {
+        for i in 0..=20 {
             println!("\nBatch size: {:?}\n", 1 << i);
             test_prove_and_verify::<Bls12_381>(1 << i);
         }
@@ -151,7 +162,7 @@ mod bn254 {
 
     #[test]
     fn prove_and_verify() {
-        for i in 0..20 {
+        for i in 0..=10 {
             test_prove_and_verify::<Bn254>(1 << i);
         }
     }

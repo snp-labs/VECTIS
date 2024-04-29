@@ -31,6 +31,7 @@ pub mod verifier;
 
 pub mod link;
 
+
 pub mod error;
 
 pub type Result<T> = core::result::Result<T, error::Error>;
@@ -40,3 +41,6 @@ use ark_std::vec::Vec;
 
 #[cfg(test)]
 pub mod tests;
+
+#[cfg(test)]
+pub mod mock;

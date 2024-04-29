@@ -85,7 +85,7 @@ pub struct VerifyingKey<E: Pairing> {
 }
 
 /// A verification key in the Groth16 SNARK with CP_link verification parameters
-#[derive(Clone, Debug, PartialEq, CanonicalSerialize, CanonicalDeserialize)]
+#[derive(Clone, Debug, PartialEq , CanonicalSerialize, CanonicalDeserialize)]
 pub struct VerifyingKeyWithLink<E: Pairing> {
     pub groth16_vk: VerifyingKey<E>,
     /// Public parameters of the Subspace Snark

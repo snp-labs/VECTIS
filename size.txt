@@ -1,0 +1,175 @@
+
+running 1 test
+
+Batch size: 1
+
+
+vk size: 1044
+pk size: 1764
+proof size: 288
+
+
+Batch size: 2
+
+
+vk size: 1188
+pk size: 2148
+proof size: 288
+
+
+Batch size: 4
+
+
+vk size: 1476
+pk size: 2916
+proof size: 288
+
+
+Batch size: 8
+
+
+vk size: 2052
+pk size: 4452
+proof size: 288
+
+
+Batch size: 16
+
+
+vk size: 3204
+pk size: 7524
+proof size: 288
+
+
+Batch size: 32
+
+
+vk size: 5508
+pk size: 13668
+proof size: 288
+
+
+Batch size: 64
+
+
+vk size: 10116
+pk size: 25956
+proof size: 288
+
+
+Batch size: 128
+
+
+vk size: 19332
+pk size: 50532
+proof size: 288
+
+
+Batch size: 256
+
+
+vk size: 37764
+pk size: 99684
+proof size: 288
+
+
+Batch size: 512
+
+
+vk size: 74628
+pk size: 197988
+proof size: 288
+
+
+Batch size: 1024
+
+
+vk size: 148356
+pk size: 394596
+proof size: 288
+
+
+Batch size: 2048
+
+
+vk size: 295812
+pk size: 787812
+proof size: 288
+
+
+Batch size: 4096
+
+
+vk size: 590724
+pk size: 1574244
+proof size: 288
+
+
+Batch size: 8192
+
+
+vk size: 1180548
+pk size: 3147108
+proof size: 288
+
+
+Batch size: 16384
+
+
+vk size: 2360196
+pk size: 6292836
+proof size: 288
+
+
+Batch size: 32768
+
+
+vk size: 4719492
+pk size: 12584292
+proof size: 288
+
+
+Batch size: 65536
+
+test tests::bls12_381::prove_and_verify has been running for over 60 seconds
+
+vk size: 9438084
+pk size: 25167204
+proof size: 288
+
+
+Batch size: 131072
+
+
+vk size: 18875268
+pk size: 50333028
+proof size: 288
+
+
+Batch size: 262144
+
+
+vk size: 37749636
+pk size: 100664676
+proof size: 288
+
+
+Batch size: 524288
+
+
+vk size: 75498372
+pk size: 201327972
+proof size: 288
+
+
+Batch size: 1048576
+
+
+vk size: 150995844
+pk size: 402654564
+proof size: 288
+
+test tests::bls12_381::prove_and_verify ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 6 filtered out; finished in 1342.42s
+
