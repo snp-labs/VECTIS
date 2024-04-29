@@ -29,12 +29,11 @@ contract BccSNARK {
             18145374548316659229864951505936810867524529744013061164160124189068667257707
         );
 
-    constructor(uint256[] memory _vk, uint256[] memory _listCM) {
+    constructor(uint256[] memory _vk, uint256 batch_size) {
         vk = _vk;
 
-        uint256 len = _listCM.length / 2;
-        for (uint256 i = 0; i < len; i++)
-            listCM.push(Bn128.G1Point(_listCM[i * 2], _listCM[i * 2 + 1]));
+        for (uint256 i = 0; i < batch_size; i++)
+            listCM.push(g);
 
         challenge = 0;
     }
