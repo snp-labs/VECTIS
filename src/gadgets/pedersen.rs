@@ -75,7 +75,7 @@ mod test {
         }
 
         fn padded_circuit_size(&self) -> usize {
-            1 << 19
+            1 << 24
         }
     }
 
@@ -87,8 +87,6 @@ mod test {
         VerifierData<F, PC>: PartialEq,
     {
         // Generate CRS
-        // let pp = PC::setup(1 << 16, None, &mut test_rng()).map_err(to_pc_error::<F, PC>)?;
-
         let mut circuit = TestCircuit::<F, P>::default();
         circuit.msg.resize(batch_size, P::ScalarField::zero());
         circuit.open.resize(batch_size, P::ScalarField::zero());
@@ -121,9 +119,6 @@ mod test {
         let (proof, pi, _) = {
             let mut circuit: TestCircuit<F, P> = TestCircuit {
                 ck: _to_vec(ck),
-                // msg: _to_vec(msg),
-                // open: _to_vec(open),
-                // cm: _to_vec(cm),
                 msg,
                 open,
                 cm,
@@ -171,8 +166,8 @@ mod test {
     #[test]
     #[allow(non_snake_case)]
     fn test_pedersen_full_on_Bls12_381() -> Result<(), Error> {
-        let pp = crate::commitment::KZG10::<Bls12_381>::setup(1 << 20, None, &mut test_rng()).map_err(to_pc_error::<<Bls12_381 as PairingEngine>::Fr, crate::commitment::KZG10<Bls12_381>>)?;
-        for i in 4..=20{
+        let pp = crate::commitment::KZG10::<Bls12_381>::setup(1 << 25, None, &mut test_rng()).map_err(to_pc_error::<<Bls12_381 as PairingEngine>::Fr, crate::commitment::KZG10<Bls12_381>>)?;
+        for i in 0..=20{
             let n = 1 << i;
             println!("\nTest (# commitment: {})\n", n);
             test_full::<

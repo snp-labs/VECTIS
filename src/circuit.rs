@@ -285,9 +285,13 @@ where
         P: TEModelParameters<BaseField = F>,
         PC: HomomorphicCommitment<F>,
     {
+        let trim_time = start_timer!(|| "Trime commiting key Time");
         let circuit_size = self.padded_circuit_size() + 6;
         let (ck, _) = PC::trim(u_params, circuit_size, 0, None)
             .map_err(to_pc_error::<F, PC>)?;
+        end_timer!(trim_time);
+
+        let prover_time = start_timer!(|| "Prover Time");
 
         // New Prover instance
         let mut prover = Prover::new(transcript_init);
@@ -298,7 +302,9 @@ where
         let pi = prover.cs.get_pi().clone();
         let cw = prover.cs.get_cw().clone();
 
-        Ok((prover.prove(proof_dependent_commitment, opening, &ck)?.0, pi, cw))
+        let res =(prover.prove(proof_dependent_commitment, opening, &ck)?.0, pi, cw);
+        end_timer!(prover_time);
+        Ok(res)
     }
 
     /// Returns the Circuit size padded to the next power of two.

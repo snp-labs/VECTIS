@@ -258,7 +258,7 @@ mod test {
     #[allow(non_snake_case)]
     fn test_batched_pedersen_full_on_Bls12_381() -> Result<(), Error> {
         let pp = crate::commitment::KZG10::<Bls12_381>::setup(1 << 22, None, &mut test_rng()).map_err(to_pc_error::<<Bls12_381 as PairingEngine>::Fr, crate::commitment::KZG10<Bls12_381>>)?;
-        for i in 4..=20{
+        for i in 0..=20{
             let batch_size = 1 << i;
             println!("\nTest for the batch size: {}\n", batch_size);
                 test_batch_full::<
