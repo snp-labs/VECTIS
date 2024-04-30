@@ -2,18 +2,22 @@ import { ethers } from "hardhat"
 import { expect } from "chai"
 import { mock } from "./mock"
 import { result } from "./result"
+import { BccSNARK } from "../typechain-types"
 
 describe('BccSNARK TPS', function () {
     const logN = 10
     const duration = 300 // 5 minutes
     const logGap = 5 // 5 seconds
-    const txCount = 30
+    const txCount = 10
 
     async function deploy(batchSize: any) {
         const [deployer] = await ethers.getSigners();
         const BccSNARK = await ethers.getContractFactory('BccSNARK')
         const bccSNARK = await BccSNARK.deploy(mock.vk, batchSize)
-        return bccSNARK
+
+        const data = (await bccSNARK.verify(mock.proof)).data
+
+        return { bccSNARK, data }
     }
 
     // it("TPS Summary", function () {
@@ -28,14 +32,31 @@ describe('BccSNARK TPS', function () {
     //     }
     // })
 
+    let provider = new ethers.providers.StaticJsonRpcProvider("http://localhost:8545/")
+    // let provider = ethers.provider
+
     let batchSize = 1 << logN
     it("Calculating TPS by Tx Count", async function () {
-        const bccSNARK = await deploy(batchSize)
+        const { bccSNARK, data } = await deploy(batchSize)
 
         const startTime = new Date()
         let promise = []
-        for (let i = 0; i < txCount; i++)
-            promise.push(bccSNARK.verify(mock.proof))
+        for (let i = 0; i < txCount; i++) {
+            const wallet = ethers.Wallet.createRandom()
+            const signer = wallet.connect(provider)
+
+            let signedTx = await signer.signTransaction({
+                from: wallet.address,
+                to: ethers.constants.AddressZero,
+                nonce: 0,
+                value: 0,
+                data,
+                gasLimit: 100000000,
+                chainId: 1337,
+            })
+
+            promise.push(ethers.provider.sendTransaction(signedTx));
+        }
         await Promise.all(promise)
         let deltaTime = ((new Date()).getTime() - startTime.getTime()) / 1000
 
@@ -45,6 +66,7 @@ describe('BccSNARK TPS', function () {
         console.log("TPS:", txCount / deltaTime)
         expect(true)
     })
+
 
     // it("Calculating TPS by Duration", async function () {
     //     const bccSNARK = await deploy()
