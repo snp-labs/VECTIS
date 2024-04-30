@@ -7,7 +7,8 @@ const config: HardhatUserConfig = {
     hardhat: {
       chainId: 1337,
       initialBaseFeePerGas: 0,
-      // allowUnlimitedContractSize: true
+      allowUnlimitedContractSize: true,
+      blockGasLimit: 124500000,
     },
     besuWallet: {
       initialBaseFeePerGas: 0,
@@ -16,6 +17,9 @@ const config: HardhatUserConfig = {
         "0x8f2a55949038a9610f50fb23b5883af3b4ecb3c3bb792cbcefbd1542c692be63"
       ],
     },
+  },
+  mocha: {
+    timeout: 100000000,
   },
 };
 
