@@ -56,8 +56,9 @@ where
     fn run<E: Pairing>(commit_witness_count: u32) {
         let mut rng = StdRng::seed_from_u64(0u64);
 
+        // Fixture
         let m: Vec<Option<E::ScalarField>> = (0..commit_witness_count)
-            .map(|_| Some(E::ScalarField::rand(&mut rng)))
+            .map(|_| Some(E::ScalarField::ONE))
             .collect();
 
         let circuit = PedersenCircuit { m: m.clone() };
@@ -78,9 +79,9 @@ where
         let pvk_link = prepare_verifying_key::<E>(&params_link.vk.groth16_vk);
 
         // Randomness for the committed witness in proof.d
-        let v = E::ScalarField::rand(&mut rng);
+        let v = E::ScalarField::ONE; // Fixture
         // Randomness for the committed witness in CP_link
-        let link_v = E::ScalarField::rand(&mut rng);
+        let link_v = E::ScalarField::ONE; // Fixture
 
         let circuit = PedersenCircuit { m : m.clone() };
 
@@ -113,10 +114,6 @@ where
 
         #[cfg(feature = "mock")]
         {
-            println!("\nvk size: {:?}", params_link.vk.compressed_size());
-            println!("pk size: {:?}", params_link.compressed_size());
-            println!("proof size: {:?}\n", proof_link.compressed_size());
-
             if let Err(e) = write_to_raw_data_file::<E>(commit_witness_count,&params_link.vk, &proof_link, &commitments) {
                 println!("Error writing data to file: {}", e);
             }
@@ -162,8 +159,8 @@ mod bn254 {
 
     #[test]
     fn prove_and_verify() {
-        for i in 0..=10 {
-            test_prove_and_verify::<Bn254>(1 << i);
+        for i in 0..=20 {
+            test_prove_and_verify::<Bn254>(1 << 20);
         }
     }
 }
