@@ -1,115 +1,65 @@
-const { JsonRpcProvider } = require('ethers');
 const { parseRawFile } = require('./parse');
-const fs = require('fs');
 const { ethers } = require('hardhat');
 
 describe('LegoGroth16', function () {
-	const txCount = 10;
-	const BatchSize = 1 << 10; // NOTE: Set batch size (log)
-	const mockData = parseRawFile('./test/mock-' + BatchSize + '.json');
+	const txCount = 100;
 
-	async function deploy(batchSize) {
-		const legoGroth16 = await ethers.getContractFactory('LegoGroth16');
-		const contract = await legoGroth16.deploy(
-			mockData.vkGroth,
-			mockData.vkLink,
-			batchSize,
-		);
-		return contract;
-	}
+	for (let i = 1; i <= 10; i++) {
+		const sz = 1 << i;
+		const mockData = parseRawFile('./test/mock-' + sz + '.json');
 
-	it('Computing TPS by Tx Count', async function () {
-		const contract = await deploy(BatchSize);
-
-		await contract.init();
-
-		const startTime = new Date();
-		// let promise = [];
-		// for (let i = 0; i < txCount; i++) {
-		// 	promise.push(
-		// 		await contract.verify(mockData.proofGroth, mockData.proofLink),
-		// 	);
-		// }
-
-		const data = (
-			await contract.verify(mockData.proofGroth, mockData.proofLink)
-		).data;
-
-		const provider = new ethers.JsonRpcProvider('http://localhost:8545/');
-
-		let txs = [];
-		for (let i = 0; i < txCount; i++) {
-			const wallet = ethers.Wallet.createRandom();
-			const signer = wallet.connect(provider);
-
-			let signedTx = await signer.signTransaction({
-				from: wallet.address,
-				to: ethers.ZeroAddress,
-				nonce: 0,
-				value: 0,
-				data,
-				gasLimit: 100000000,
-				chainId: 1337,
-			});
-
-			// txs.push(signedTx);
-			txs.push(provider.broadcastTransaction(signedTx));
+		async function deploy(batchSize) {
+			const legoGroth16 = await ethers.getContractFactory('LegoGroth16');
+			const contract = await legoGroth16.deploy(
+				mockData.vkGroth,
+				mockData.vkLink,
+				batchSize,
+			);
+			return contract;
 		}
-		Promise.all(txs);
-		let deltaTime = (new Date().getTime() - startTime.getTime()) / 1000;
 
-		console.log(
-			'Gas:',
-			await contract.verify.estimateGas(
-				mockData.proofGroth,
-				mockData.proofLink,
-			),
-		);
-		console.log('TPS:', txCount / deltaTime);
-	});
+		it('Computing TPS by Tx Count', async function () {
+			const contract = await deploy(sz);
+			const provider = new ethers.JsonRpcProvider(
+				'http://localhost:8545/',
+			);
 
-	/// NOTE: With random address
-	// it('Computing TPS by Tx Count', async function () {
-	// 	const provider = new ethers.JsonRpcProvider('http://localhost:8545/');
-	// 	const contract = await deploy(BatchSize);
+			await contract.init();
 
-	// 	let txs = [];
+			const startTime = new Date();
+			const data = (
+				await contract.verify(mockData.proofGroth, mockData.proofLink)
+			).data;
 
-	// 	const data = (
-	// 		await contract.verify(
-	// 			mockData.instance,
-	// 			mockData.proofGroth,
-	// 			mockData.proofLink,
-	// 		)
-	// 	).data;
+			let txs = [];
+			for (let i = 0; i < txCount; i++) {
+				const wallet = ethers.Wallet.createRandom();
+				const signer = wallet.connect(provider);
 
-	// 	for (let i = 0; i < txCount; i++) {
-	// 		const wallet = ethers.Wallet.createRandom();
-	// 		const signer = wallet.connect(provider);
+				let signedTx = await signer.signTransaction({
+					from: wallet.address,
+					to: contract.target,
+					nonce: 0,
+					value: 0,
+					maxFeePerGas: 0,
+					data,
+					gasLimit: 100000000,
+					chainId: 1337,
+				});
 
-	// 		let signedTx = await signer.signTransaction({
-	// 			from: wallet.address,
-	// 			to: ethers.ZeroAddress,
-	// 			nonce: 0,
-	// 			value: 0,
-	// 			data,
-	// 			gasLimit: 100000000,
-	// 			chainId: 1337,
-	// 		});
+				txs.push(provider.broadcastTransaction(signedTx));
+			}
+			await Promise.all(txs);
+			let deltaTime = (new Date().getTime() - startTime.getTime()) / 1000;
 
-	// 		txs.push(signedTx);
-	// 	}
-
-	// 	txs = txs.join('\n');
-	// 	fs.writeFileSync('txs.csv', txs, { encoding: 'utf-8' });
-
-	// 	console.log(
-	// 		'Gas:',
-	// 		await contract.verify.estimateGas(
-	// 			mockData.instance,
-	// 			mockData.proofGroth,
-	// 			mockData.proofLink,
-	// 		),
-	// 	);
-	// });
+			console.log(
+				'Gas:',
+				await contract.verify.estimateGas(
+					mockData.proofGroth,
+					mockData.proofLink,
+				),
+			);
+			console.log('TPS:', txCount / deltaTime);
+		});
+	}
 });

@@ -8,8 +8,8 @@ module.exports = {
 		hardhat: {
 			chainId: 1337,
 			initialBaseFeePerGas: 0,
-			blockGasLimit: 124500000,
 			allowUnlimitedContractSize: true,
+			blockGasLimit: 200500000,
 		},
 		besu: {
 			initialBaseFeePerGas: 0,
