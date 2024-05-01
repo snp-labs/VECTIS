@@ -7,8 +7,6 @@ import "./ccGroth16VerifyBn128.sol";
 import "@openzeppelin/contracts/utils/Strings.sol";
 import "hardhat/console.sol";
 
-// import "@openzeppelin/contracts/access/AccessControl.sol";
-
 contract BccSNARK {
     uint256[] private vk;
     Bn128.G1Point[] public listCM;
@@ -17,8 +15,8 @@ contract BccSNARK {
     // mock data
     Bn128.G1Point public g =
         Bn128.G1Point(
-            14503582948638727084502759502994279163222108009153332193323880774870858770036,
-            14591073697149083878648039582988519715702082715595253321641344990827767900840
+            7519601383266717548710709804083595600366561084448799853543551610498604941811,
+            15895479664152765121591734832175585709898926337923093690342838808429524790392
         );
 
     Bn128.G2Point public h =
@@ -29,17 +27,20 @@ contract BccSNARK {
             18145374548316659229864951505936810867524529744013061164160124189068667257707
         );
 
-    constructor(uint256[] memory _vk, uint256 batch_size) {
+    constructor(
+        uint256[] memory _cm,
+        uint256[] memory _vk,
+        uint256 batch_size
+    ) {
+        require(_vk.length == 18, "Invalid Verifying Key Size");
         vk = _vk;
 
         for (uint256 i = 0; i < batch_size; i++)
-            listCM.push(g);
-
-        challenge = 0;
+            listCM.push(Bn128.G1Point(_cm[0], _cm[1]));
     }
 
     function verify(uint256[] memory proof) public returns (bool) {
-        require(proof.length == 10, Strings.toString(proof.length));
+        require(proof.length == 10, "Invalid Proof Size");
         Bn128.G1Point memory D2 = Bn128.G1Point({X: proof[8], Y: proof[9]});
 
         // bytes memory transcript = abi.encodePacked(listCM[0].X, listCM[0].Y);
@@ -73,10 +74,5 @@ contract BccSNARK {
 
         delete proof;
         return true;
-    }
-
-    function chl(uint256 prev, uint256 curr) public {
-        require(prev == challenge, "prev challenge diff");
-        challenge = curr;
     }
 }

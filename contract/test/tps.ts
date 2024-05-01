@@ -1,103 +1,67 @@
 import { ethers } from "hardhat"
 import { expect } from "chai"
 import { mock } from "./mock"
-import { result } from "./result"
-import { BccSNARK } from "../typechain-types"
 
 describe('BccSNARK TPS', function () {
     const logN = 10
     const duration = 300 // 5 minutes
     const logGap = 5 // 5 seconds
-    const txCount = 10
+    const txCount = 100
 
-    async function deploy(batchSize: any) {
-        const [deployer] = await ethers.getSigners();
+    const provider = new ethers.JsonRpcProvider('http://localhost:8545/');
+
+    async function deploy(logN: any, batchSize: any) {
         const BccSNARK = await ethers.getContractFactory('BccSNARK')
-        const bccSNARK = await BccSNARK.deploy(mock.vk, batchSize)
+        const bccSNARK = await BccSNARK.deploy(mock.batch[logN - 1].cm, mock.batch[logN - 1].vk, batchSize)
 
-        const data = (await bccSNARK.verify(mock.proof)).data
+        const data = (await bccSNARK.verify(mock.batch[logN - 1].proof)).data
+        let user = []
+        for (let i = 0; i < txCount; i++) {
+            let wallet = ethers.Wallet.createRandom()
+            let signer = wallet.connect(provider)
 
-        return { bccSNARK, data }
+            user.push({
+                wallet,
+                signer
+            })
+        }
+
+        return { bccSNARK, data, user }
     }
 
-    // it("TPS Summary", function () {
-    //     for (let d of result.data) {
-    //         let batchTPS = d.tx / d.time
-    //         let TPS = d.batch * batchTPS
-    //         let gasAvg = d.gas / d.tx
-    //         console.log("batch size: ", d.batch)
-    //         console.log("tps: ", batchTPS)
-    //         console.log("tps (batch): ", TPS)
-    //         console.log("gas (avg): ", gasAvg)
-    //     }
-    // })
+    for (let i = 1; i <= logN; i++) {
 
-    let provider = new ethers.providers.StaticJsonRpcProvider("http://localhost:8545/")
-    // let provider = ethers.provider
+        let batchSize = 1 << i
+        it("TPS", async function () {
+            const { bccSNARK, data, user } = await deploy(i, batchSize)
+            const bccSNARKAddress = await bccSNARK.getAddress()
+            let signedTx = []
+            for (let u of user) {
+                signedTx.push(await u.signer.signTransaction({
+                    from: u.wallet.address,
+                    to: bccSNARKAddress,
+                    nonce: 0,
+                    value: 0,
+                    data,
+                    gasLimit: 100000000,
+                    chainId: 1337,
+                }))
+            }
 
-    let batchSize = 1 << logN
-    it("Calculating TPS by Tx Count", async function () {
-        const { bccSNARK, data } = await deploy(batchSize)
-
-        const startTime = new Date()
-        let promise = []
-        for (let i = 0; i < txCount; i++) {
-            const wallet = ethers.Wallet.createRandom()
-            const signer = wallet.connect(provider)
-
-            let signedTx = await signer.signTransaction({
-                from: wallet.address,
-                to: ethers.constants.AddressZero,
-                nonce: 0,
-                value: 0,
-                data,
-                gasLimit: 100000000,
-                chainId: 1337,
+            const startTime = new Date()
+            let promise = signedTx.map((tx) => {
+                return provider.broadcastTransaction(tx)
             })
 
-            promise.push(ethers.provider.sendTransaction(signedTx));
-        }
-        await Promise.all(promise)
-        let deltaTime = ((new Date()).getTime() - startTime.getTime()) / 1000
+            let d = await Promise.all(promise)
 
-        console.log("Batch Size:", batchSize)
-        console.log("Gas:", await bccSNARK.estimateGas.verify(mock.proof))
+            let deltaTime = ((new Date()).getTime() - startTime.getTime()) / 1000
 
-        console.log("TPS:", txCount / deltaTime)
-        expect(true)
-    })
+            console.log("Batch Size:", batchSize)
+            console.log("Gas:", await bccSNARK.verify.estimateGas(mock.batch[i - 1].proof))
 
-
-    // it("Calculating TPS by Duration", async function () {
-    //     const bccSNARK = await deploy()
-    //     let nextLog = logGap
-
-    //     let transactionCount = 0
-    //     const startTime = new Date()
-    //     let deltaTime = 0
-    //     while (deltaTime < duration) {
-    //         let receipt = await bccSNARK.verify(mock.proof)
-    //         let tx = ethers.Transaction.from(receipt).serialized
-    //         console.log(receipt)
-    //         console.log(tx)
-
-    //         transactionCount++
-    //         deltaTime = ((new Date()).getTime() - startTime.getTime()) / 1000
-
-    //         if (deltaTime > nextLog) {
-    //             nextLog += logGap
-    //             console.log(deltaTime, transactionCount)
-    //         }
-    //     }
-
-    //     console.log("TPS:", transactionCount / deltaTime)
-    //     expect(true)
-    // })
-
-    // it("Change Test", async function () {
-    //     const bccSNARK = await deploy()
-    //     for (let i = 1; i <= 10; i++)
-    //         await bccSNARK.chl(i - 1, i);
-    //     expect(true)
-    // })
+            console.log("TPS:", txCount / deltaTime)
+            expect(true)
+        })
+    }
 })
