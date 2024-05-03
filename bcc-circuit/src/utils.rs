@@ -1,9 +1,39 @@
-use ark_ec::pairing::Pairing;
-use ark_ec::AffineRepr;
-use ark_ff::PrimeField;
 use bccgroth16::crypto::commitment::CM;
 use serde::{Deserialize, Serialize};
 use std::ffi::{c_char, CStr};
+
+use ark_ec::{pairing::Pairing, AffineRepr, CurveGroup};
+use ark_ff::{BigInteger, PrimeField};
+use ark_std::vec::Vec;
+use sha3::{Digest, Keccak256};
+
+/// SHA3 구현
+pub fn compute_hash<E>(p: &[E::G1Affine]) -> E::ScalarField
+where
+    E: Pairing,
+{
+    let mut hasher = Keccak256::new();
+
+    let mut update = |v: &<E::G1Affine as AffineRepr>::BaseField| {
+        let s = v.to_string();
+        let scalar = s.parse::<E::ScalarField>().ok().unwrap();
+        let bytes: Vec<u8> = scalar.into_bigint().to_bytes_be();
+        hasher.update(&bytes);
+    };
+
+    p.iter().for_each(|q| {
+        let (x, y) = q.xy().unwrap();
+        update(x);
+        update(y);
+    });
+
+    let mut raw = vec![0u8; 32];
+    raw.copy_from_slice(&hasher.finalize());
+
+    let hash = E::ScalarField::from_be_bytes_mod_order(&raw);
+
+    hash
+}
 
 #[derive(Debug, Deserialize, Serialize)]
 #[allow(non_snake_case)]

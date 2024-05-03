@@ -38,6 +38,7 @@ pub use self::verifier::*;
 // #[cfg(feature = "r1cs")]
 pub mod crypto;
 pub mod transcript;
+pub mod utils;
 
 pub mod bcc_snark;
 use bcc_snark::{BccSNARK, CircuitSpecificSetupBccSNARK};
@@ -49,6 +50,7 @@ use ark_std::rand::RngCore;
 use ark_std::{marker::PhantomData, vec::Vec};
 
 /// The SNARK of [[Groth16]](https://eprint.iacr.org/2016/260.pdf).
+/// M: message vector size
 pub struct BccGroth16<E: Pairing, QAP: R1CSToQAP = LibsnarkReduction, const M: usize = 1> {
     _p: PhantomData<(E, QAP)>,
 }
@@ -64,9 +66,11 @@ impl<E: Pairing, QAP: R1CSToQAP> BccSNARK<E, E::ScalarField> for BccGroth16<E, Q
 
     fn circuit_specific_setup<C: ConstraintSynthesizer<E::ScalarField>, R: RngCore>(
         circuit: C,
+        num_committed_witness: usize,
         rng: &mut R,
     ) -> Result<(Self::ProvingKey, Self::VerifyingKey), Self::Error> {
-        let pk = Self::generate_random_parameters_with_reduction(circuit, rng)?;
+        let pk =
+            Self::generate_random_parameters_with_reduction(circuit, num_committed_witness, rng)?;
         let vk = pk.vk.clone();
 
         Ok((pk, vk))
@@ -111,11 +115,7 @@ impl<E: Pairing, QAP: R1CSToQAP> CircuitSpecificSetupBccSNARK<E, E::ScalarField>
 
 #[cfg(test)]
 mod tests {
-    use crate::{
-        bcc_snark::{BccSNARK, CircuitSpecificSetupBccSNARK},
-        crypto::tree::AggregationTree,
-        BccGroth16,
-    };
+    use crate::{bcc_snark::BccSNARK, crypto::tree::AggregationTree, BccGroth16};
     use ark_ff::PrimeField;
     use ark_r1cs_std::{fields::fp::FpVar, prelude::*};
     use ark_relations::r1cs::{
@@ -194,7 +194,9 @@ mod tests {
 
     #[test]
     fn test_circuit() {
-        const M: usize = 1024;
+        const BATCH_SIZE: usize = 1024;
+        const M: usize = 1;
+        let num_committed_witness: usize = (M + 1) * (BATCH_SIZE + 1) + 1; // agg(M + 1), list[BATCH_SIZE](M + 1), tau
         let aggr_msg = F::from(0u64);
         let aggr_rand = F::from(0u64);
         let list_msg = vec![F::from(0u64); M];
@@ -210,7 +212,9 @@ mod tests {
         };
 
         let mut rng = ark_std::rand::rngs::StdRng::seed_from_u64(test_rng().next_u64());
-        let (pk, vk) = BccGroth16::<E>::circuit_specific_setup(circuit, &mut rng).unwrap();
+        let (pk, vk) =
+            BccGroth16::<E>::circuit_specific_setup(circuit, num_committed_witness, &mut rng)
+                .unwrap();
 
         let committed_witness = [&list_msg[..], &list_rand[..]].concat();
 

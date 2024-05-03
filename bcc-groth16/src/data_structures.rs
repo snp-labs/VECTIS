@@ -6,6 +6,8 @@ use core::ops::Neg;
 use std::fs::{self, File};
 use std::path::Path;
 
+use crate::utils::ToVec;
+
 /// Read Vec<u8> from file
 pub fn read_file<P: AsRef<Path>>(path: P) -> Vec<u8> {
     let mut f = File::open(&path).expect("no file found");
@@ -75,6 +77,12 @@ impl<E: Pairing> ToString for Proof<E> {
             "c" : format!("{:#?}", self.c),
         })
         .to_string()
+    }
+}
+
+impl ToVec<ark_bn254::Bn254> for Proof<ark_bn254::Bn254> {
+    fn to_vec(&self) -> Vec<String> {
+        [self.a.to_vec(), self.b.to_vec(), self.c.to_vec()].concat()
     }
 }
 
@@ -156,6 +164,20 @@ impl<E: Pairing> ToString for VerifyingKey<E> {
     }
 }
 
+impl ToVec<ark_bn254::Bn254> for VerifyingKey<ark_bn254::Bn254> {
+    fn to_vec(&self) -> Vec<String> {
+        [
+            self.alpha_g1.to_vec(),
+            (self.beta_g2.into_group().neg()).into_affine().to_vec(),
+            (self.delta_g2.into_group().neg()).into_affine().to_vec(),
+            self.gamma_abc_g1.first().unwrap().to_vec(),
+            (self.gamma_g2.into_group().neg()).into_affine().to_vec(),
+            self.gamma_abc_g1.last().unwrap().to_vec(),
+        ]
+        .concat()
+    }
+}
+
 /// Preprocessed verification key parameters that enable faster verification
 /// at the expense of larger size in memory.
 #[derive(Clone, Debug, PartialEq, CanonicalSerialize, CanonicalDeserialize)]
@@ -218,6 +240,8 @@ pub struct ProvingKey<E: Pairing> {
     pub h_query: Vec<E::G1Affine>,
     /// The elements `l_i * G` in `E::G1`.
     pub l_query: Vec<E::G1Affine>,
+    /// The number of committed witness
+    pub num_committed_witness: usize,
 }
 
 impl<E: Pairing> Default for ProvingKey<E> {
@@ -233,6 +257,7 @@ impl<E: Pairing> Default for ProvingKey<E> {
             b_g2_query: Vec::new(),
             h_query: Vec::new(),
             l_query: Vec::new(),
+            num_committed_witness: 0,
         }
     }
 }

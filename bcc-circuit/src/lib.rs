@@ -7,7 +7,7 @@ mod tests;
 use crate::circuit::BccCircuit;
 use crate::utils::cm_list_from_c_str;
 use ark_ec::pairing::Pairing;
-use bccgroth16::{bcc_snark::*, BccGroth16, Proof, ProvingKey, VerifyingKey};
+use bccgroth16::{bcc_snark::*, utils::ToVec, BccGroth16, Proof, ProvingKey, VerifyingKey};
 
 use ark_ec::{AffineRepr, CurveGroup};
 use ark_serialize::CanonicalSerialize;
@@ -59,7 +59,8 @@ pub extern "C" fn setup_bn254(param_path: *const c_char, users: usize) -> bool {
     println!("# User : {}, # modified user: {}", users, modified_users);
 
     // Generate a common reference string a for cbdc circuit
-    let (pk, vk) = BccGroth16::<E>::setup(mock_circuit, &mut rng).unwrap();
+    let num_committed_witness = 2 * (modified_users + 1) + 1;
+    let (pk, vk) = BccGroth16::<E>::setup(mock_circuit, num_committed_witness, &mut rng).unwrap();
 
     let mut pk_bytes = Vec::new();
     pk.serialize_compressed(&mut pk_bytes).unwrap();

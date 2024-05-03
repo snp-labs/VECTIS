@@ -37,15 +37,15 @@ impl<F: PrimeField> BccCircuit<F> {
 
 impl<F: PrimeField> ConstraintSynthesizer<F> for BccCircuit<F> {
     fn generate_constraints(self, cs: ConstraintSystemRef<F>) -> ark_relations::r1cs::Result<()> {
-        let aggr = CMVar::new_input(cs.clone(), || {
+        let aggr = CMVar::new_witness(cs.clone(), || {
             self.aggr.ok_or(SynthesisError::AssignmentMissing)
         })?;
 
-        let list_cm = Vec::<CMVar<F>>::new_input(cs.clone(), || {
+        let list_cm = Vec::<CMVar<F>>::new_witness(cs.clone(), || {
             self.list_cm.ok_or(SynthesisError::AssignmentMissing)
         })?;
 
-        let rand = FpVar::new_input(cs.clone(), || {
+        let rand = FpVar::new_witness(cs.clone(), || {
             self.rand.ok_or(SynthesisError::AssignmentMissing)
         })?;
 

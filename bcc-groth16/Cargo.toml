@@ -23,6 +23,7 @@ ark-crypto-primitives = { version = "0.4.0", default-features = false, features 
 ] }
 ark-r1cs-std = { version = "0.4.0", default-features = false, optional = true }
 ark-groth16 = "0.4.0"
+ark-bn254 = "0.4.0"
 
 merlin = { version = "3.0.0", default-features = false }
 

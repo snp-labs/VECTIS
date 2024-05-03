@@ -18,6 +18,7 @@ impl<E: Pairing, QAP: R1CSToQAP, const M: usize> BccGroth16<E, QAP, M> {
     #[inline]
     pub fn generate_random_parameters_with_reduction<C>(
         circuit: C,
+        num_committed_witness: usize,
         rng: &mut impl Rng,
     ) -> R1CSResult<ProvingKey<E>>
     where
@@ -41,6 +42,7 @@ impl<E: Pairing, QAP: R1CSToQAP, const M: usize> BccGroth16<E, QAP, M> {
             eta,
             g1_generator,
             g2_generator,
+            num_committed_witness,
             rng,
         )
     }
@@ -55,6 +57,7 @@ impl<E: Pairing, QAP: R1CSToQAP, const M: usize> BccGroth16<E, QAP, M> {
         eta: E::ScalarField,
         g1_generator: E::G1,
         g2_generator: E::G2,
+        num_committed_witness: usize,
         rng: &mut impl Rng,
     ) -> R1CSResult<ProvingKey<E>>
     where
@@ -95,8 +98,9 @@ impl<E: Pairing, QAP: R1CSToQAP, const M: usize> BccGroth16<E, QAP, M> {
         end_timer!(domain_time);
         ///////////////////////////////////////////////////////////////////////////
 
+        // num_cc_instance -> num_instance_variables + num_committed_witness
         let reduction_time = start_timer!(|| "R1CS to QAP Instance Map with Evaluation");
-        let num_instance_variables = cs.num_instance_variables();
+        let num_cc_instance_variables = cs.num_instance_variables() + num_committed_witness;
         let (a, b, c, zt, qap_num_variables, m_raw) =
             QAP::instance_map_with_evaluation::<E::ScalarField, D<E::ScalarField>>(cs, &t)?;
         end_timer!(reduction_time);
@@ -115,15 +119,15 @@ impl<E: Pairing, QAP: R1CSToQAP, const M: usize> BccGroth16<E, QAP, M> {
         let gamma_inverse = gamma.inverse().ok_or(SynthesisError::UnexpectedIdentity)?;
         let delta_inverse = delta.inverse().ok_or(SynthesisError::UnexpectedIdentity)?;
 
-        let gamma_abc = cfg_iter!(a[..num_instance_variables])
-            .zip(&b[..num_instance_variables])
-            .zip(&c[..num_instance_variables])
+        let gamma_abc = cfg_iter!(a[..num_cc_instance_variables])
+            .zip(&b[..num_cc_instance_variables])
+            .zip(&c[..num_cc_instance_variables])
             .map(|((a, b), c)| (beta * a + &(alpha * b) + c) * &gamma_inverse)
             .collect::<Vec<_>>();
 
-        let l = cfg_iter!(a[num_instance_variables..])
-            .zip(&b[num_instance_variables..])
-            .zip(&c[num_instance_variables..])
+        let l = cfg_iter!(a[num_cc_instance_variables..])
+            .zip(&b[num_cc_instance_variables..])
+            .zip(&c[num_cc_instance_variables..])
             .map(|((a, b), c)| (beta * a + &(alpha * b) + c) * &delta_inverse)
             .collect::<Vec<_>>();
 
@@ -243,6 +247,7 @@ impl<E: Pairing, QAP: R1CSToQAP, const M: usize> BccGroth16<E, QAP, M> {
             b_g2_query,
             h_query,
             l_query,
+            num_committed_witness,
         })
     }
 }

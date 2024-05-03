@@ -47,15 +47,17 @@ impl<E: Pairing, QAP: R1CSToQAP, const M: usize> BccGroth16<E, QAP, M> {
             .collect();
 
         // parallelize the computation of the list commitment
-        let list_cm = list_cm
+        let list_cm_g = list_cm
             .par_iter()
             .map(|cm| E::G1::msm_bigint(&ck.batched, &cm[..]))
             .collect::<Vec<_>>();
 
-        // normalize the list commitment
-        let list_cm = E::G1::normalize_batch(&list_cm);
+        drop(list_cm);
 
-        list_cm.iter().for_each(|cm| {
+        // normalize the list commitment
+        let list_cm_g = E::G1::normalize_batch(&list_cm_g);
+
+        list_cm_g.iter().for_each(|cm| {
             transcript.append_message(b"list commitment", &cm.to_string().as_bytes());
         });
 
@@ -75,7 +77,8 @@ impl<E: Pairing, QAP: R1CSToQAP, const M: usize> BccGroth16<E, QAP, M> {
         };
 
         let tau: E::ScalarField = transcript.challenge_scalar(b"challenge");
-        Ok((list_cm, commitment, tau))
+        drop(transcript);
+        Ok((list_cm_g, commitment, tau))
     }
 
     /// Create a Groth16 proof using randomness `r` and `s` and
@@ -90,6 +93,7 @@ impl<E: Pairing, QAP: R1CSToQAP, const M: usize> BccGroth16<E, QAP, M> {
         matrices: &ConstraintMatrices<E::ScalarField>,
         num_inputs: usize,
         num_constraints: usize,
+        num_committed_witness: usize,
         full_assignment: &[E::ScalarField],
     ) -> R1CSResult<Proof<E>> {
         let prover_time = start_timer!(|| "Groth16::Prover");
@@ -132,7 +136,7 @@ impl<E: Pairing, QAP: R1CSToQAP, const M: usize> BccGroth16<E, QAP, M> {
             .map(|s| s.into_bigint())
             .collect::<Vec<_>>();
 
-        let l_aux_acc = E::G1::msm_bigint(&pk.l_query, &aux_assignment[..]);
+        let l_aux_acc = E::G1::msm_bigint(&pk.l_query, &aux_assignment[pk.num_committed_witness..]);
 
         let r_s_delta_g1 = pk.delta_g1 * (r * s);
 

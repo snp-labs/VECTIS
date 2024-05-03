@@ -1,5 +1,5 @@
 [package]
-name = "cbdc-circuit"
+name = "bcc-circuit"
 version = "0.1.0"
 authors = ["kwonhojeong@hanyang.ac.kr", "sunjbs98@gmail.com"]
 edition = "2021"

@@ -35,6 +35,7 @@ pub trait BccSNARK<E: Pairing, F: PrimeField> {
     /// and samples proving and verification keys for that circuit.
     fn circuit_specific_setup<C: ConstraintSynthesizer<F>, R: RngCore + CryptoRng>(
         circuit: C,
+        num_committed_witness: usize,
         rng: &mut R,
     ) -> Result<(Self::ProvingKey, Self::VerifyingKey), Self::Error>;
 
@@ -89,8 +90,9 @@ pub trait CircuitSpecificSetupBccSNARK<E: Pairing, F: PrimeField>: BccSNARK<E, F
     /// just invokes `<Self as SNARK<F>>::circuit_specific_setup(...)`.
     fn setup<C: ConstraintSynthesizer<F>, R: RngCore + CryptoRng>(
         circuit: C,
+        num_committed_witness: usize,
         rng: &mut R,
     ) -> Result<(Self::ProvingKey, Self::VerifyingKey), Self::Error> {
-        <Self as BccSNARK<E, F>>::circuit_specific_setup(circuit, rng)
+        <Self as BccSNARK<E, F>>::circuit_specific_setup(circuit, num_committed_witness, rng)
     }
 }
