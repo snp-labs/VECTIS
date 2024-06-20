@@ -4,7 +4,6 @@ pragma solidity ^0.8.0;
 import "./Bn128.sol";
 import "./CommitTree.sol";
 import "./ccGroth16VerifyBn128.sol";
-import "@openzeppelin/contracts/utils/Strings.sol";
 import "hardhat/console.sol";
 
 contract BccSNARK {
@@ -43,16 +42,59 @@ contract BccSNARK {
         require(proof.length == 10, "Invalid Proof Size");
         Bn128.G1Point memory D2 = Bn128.G1Point({X: proof[8], Y: proof[9]});
 
-        // bytes memory transcript = abi.encodePacked(listCM[0].X, listCM[0].Y);
-        // for (uint256 i = 1; i < listCM.length; i++)
-        //     transcript = abi.encodePacked(transcript, listCM[i].X, listCM[i].Y);
-        bytes memory transcript = abi.encodePacked(D2.X, D2.Y);
-        uint256 tau = uint256(keccak256(transcript)) % Bn128.curveOrder;
+        // uint256 ord = Bn128.curveOrder;
+        // uint256 tau;
+        // assembly {
+        //     let transcript := mload(0x40)
+        //     mstore(transcript, mload(D2))
+        //     mstore(add(transcript, 0x20), mload(add(D2, 0x20)))
+        //     tau := mod(keccak256(transcript, 0x40), ord)
+        // }
 
-        Bn128.G1Point memory D1 = CommitTree.layerWiseMultiplication(
-            tau,
-            listCM
-        );
+        uint _slot;
+        assembly {
+            _slot := listCM.slot
+        }
+        bytes32 lst = keccak256(abi.encode(_slot));
+        uint256 len = listCM.length;
+        uint256 ord = Bn128.curveOrder;
+        uint256 tau;
+        assembly {
+            let transcript := mload(0x40)
+            let trs := transcript
+            for {
+                let ptr := lst
+                let end := add(lst, shl(0x01, len))
+            } lt(ptr, end) {
+                ptr := add(ptr, 0x02)
+                trs := add(trs, 0x40)
+            } {
+                mstore(trs, sload(ptr))
+                mstore(add(trs, 0x20), sload(add(ptr, 0x01)))
+            }
+            mstore(trs, mload(D2))
+            mstore(add(trs, 0x20), mload(add(D2, 0x20)))
+            trs := add(trs, 0x40)
+            tau := mod(keccak256(transcript, sub(trs, transcript)), ord)
+        }
+
+        uint256[] memory tauList = new uint256[](listCM.length);
+        tauList[0] = 1;
+        assembly {
+            for {
+                let ptr := add(tauList, 0x40)
+                let end := add(ptr, shl(0x05, sub(len, 1)))
+            } lt(ptr, end) {
+                ptr := add(ptr, 0x20)
+            } {
+                mstore(ptr, mulmod(mload(sub(ptr, 0x20)), tau, ord))
+            }
+        }
+
+        // Bn128.G1Point memory D1 = Bn128.smsm(tauList, listCM);
+        Bn128.G1Point memory D1 = Bn128.msm(tauList, listCM);
+
+        delete tauList;
 
         Bn128.G1Point memory D3 = Bn128.mul(
             tau,

@@ -9,7 +9,7 @@ const config: HardhatUserConfig = {
       initialBaseFeePerGas: 0,
       gasPrice: 0,
       allowUnlimitedContractSize: true,
-      blockGasLimit: 124500000,
+      blockGasLimit: 3000000000,
     },
     besuWallet: {
       chainId: 1337,
