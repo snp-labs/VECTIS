@@ -1,17 +1,17 @@
 use super::*;
 use crate::{circuit::BccCircuit, utils::compute_hash};
-
-use ark_ff::PrimeField;
-use ark_r1cs_std::{alloc::AllocVar, fields::fp::FpVar, prelude::*};
 use ark_relations::r1cs::{
-    ConstraintSynthesizer, ConstraintSystem, ConstraintSystemRef, OptimizationGoal, SynthesisError,
-    SynthesisMode,
+    ConstraintSynthesizer, ConstraintSystem, OptimizationGoal, SynthesisMode,
 };
 use ark_std::{
     rand::{CryptoRng, RngCore, SeedableRng},
     test_rng,
 };
-use bccgroth16::{crypto::commitment::CM, BccGroth16};
+use bccgroth16::{
+    bcc_snark::{BccSNARK, CircuitSpecificSetupBccSNARK},
+    crypto::commitment::CM,
+    BccGroth16,
+};
 use lazy_static::lazy_static;
 
 lazy_static! {
@@ -19,7 +19,7 @@ lazy_static! {
     pub static ref PK_FILE: String = "cbdc.pk.dat".to_string();
     pub static ref VK_FILE: String = "cbdc.vk.dat".to_string();
     pub static ref LOG_N: usize = 20;
-    pub static ref USE_HASH: bool = true;
+    pub static ref USE_HASH: bool = false;
 }
 
 type E = ark_bn254::Bn254;

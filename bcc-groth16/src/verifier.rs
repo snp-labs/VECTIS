@@ -1,10 +1,9 @@
-use ark_ec::{pairing::Pairing, AffineRepr, CurveGroup};
+use ark_ec::{pairing::Pairing, AffineRepr, CurveGroup, VariableBaseMSM};
 use ark_ff::PrimeField;
 use ark_relations::r1cs::{Result as R1CSResult, SynthesisError};
 use core::ops::{AddAssign, Neg};
 
 use crate::{
-    crypto::tree::AggregationTree,
     r1cs_to_qap::R1CSToQAP,
     transcript::{Transcript, TranscriptProtocol},
     BccGroth16, PreparedVerifyingKey, Proof, VerifyingKey,
@@ -34,14 +33,14 @@ impl<E: Pairing, QAP: R1CSToQAP, const M: usize> BccGroth16<E, QAP, M> {
         }
 
         let (proof_dependent_cm, list_cm) = public_inputs.split_last().unwrap();
-        let list_cm = list_cm
+        let list_cm_trs = list_cm
             .iter()
             .map(|cm| cm.into_group())
             .collect::<Vec<E::G1>>();
 
         // Transcript proof-dependent commitment and the list commitments
-        for i in 0..list_cm.len() {
-            transcript.append_message(b"list commitment", &list_cm[i].to_string().as_bytes());
+        for i in 0..list_cm_trs.len() {
+            transcript.append_message(b"list commitment", &list_cm_trs[i].to_string().as_bytes());
         }
         transcript.append_message(
             b"proof dependent commitment",
@@ -50,13 +49,19 @@ impl<E: Pairing, QAP: R1CSToQAP, const M: usize> BccGroth16<E, QAP, M> {
 
         // Challenge tau
         let tau: E::ScalarField = transcript.challenge_scalar(b"challenge");
+        let mut evaluate = tau;
+        let mut powers_of_tau = vec![];
+        for i in 0..list_cm.len() {
+            powers_of_tau.push(evaluate.into_bigint());
+            evaluate *= tau;
+        }
 
         let prepare_input_timer = start_timer!(|| "Prepare Inputs");
 
         let mut g_ic = pvk.vk.gamma_abc_g1[0].into_group();
 
-        let cm_aggr_timer = start_timer!(|| "Compute Aggregation Tree");
-        let cm_aggr = list_cm.compute_root(tau);
+        let cm_aggr_timer = start_timer!(|| "Compute Aggregation of commitments");
+        let cm_aggr = E::G1::msm_bigint(list_cm, &powers_of_tau[..]);
         end_timer!(cm_aggr_timer);
 
         let tau_g1 = pvk.vk.gamma_abc_g1[1].mul_bigint(tau.into_bigint());

@@ -2,10 +2,7 @@ use ark_ff::PrimeField;
 use ark_r1cs_std::{alloc::AllocVar, fields::fp::FpVar, prelude::*};
 use ark_relations::r1cs::{ConstraintSynthesizer, ConstraintSystemRef, SynthesisError};
 use ark_std::Zero;
-use bccgroth16::crypto::{
-    commitment::{constraints::CMVar, CM},
-    tree::AggregationTree,
-};
+use bccgroth16::crypto::commitment::{constraints::CMVar, CM};
 
 #[derive(Clone)]
 pub struct BccCircuit<F: PrimeField> {
@@ -17,7 +14,12 @@ pub struct BccCircuit<F: PrimeField> {
 impl<F: PrimeField> BccCircuit<F> {
     /// Create a new circuit
     pub fn new(list_cm: Vec<CM<F>>, rand: F) -> Self {
-        let aggr = list_cm.compute_root(rand);
+        let mut aggr = CM::zero();
+        let mut evaluate = rand;
+        for &cm in list_cm.iter() {
+            aggr += cm * evaluate;
+            evaluate *= rand;
+        }
         Self {
             aggr: Some(aggr),
             list_cm: Some(list_cm),
@@ -49,7 +51,13 @@ impl<F: PrimeField> ConstraintSynthesizer<F> for BccCircuit<F> {
             self.rand.ok_or(SynthesisError::AssignmentMissing)
         })?;
 
-        let _aggr: CMVar<F> = list_cm.compute_root(rand);
+        let mut _aggr = CMVar::new_constant(cs.clone(), CM::zero())?;
+        let mut evaluate = rand.clone();
+        for cm in list_cm.iter() {
+            _aggr += cm.clone() * &evaluate;
+            evaluate *= &rand;
+        }
+
         aggr.enforce_equal(&_aggr)?;
         Ok(())
     }
