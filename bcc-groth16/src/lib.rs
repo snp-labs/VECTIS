@@ -115,124 +115,131 @@ impl<E: Pairing, QAP: R1CSToQAP> CircuitSpecificSetupBccSNARK<E, E::ScalarField>
 
 #[cfg(test)]
 mod tests {
-    use crate::{bcc_snark::BccSNARK, crypto::tree::AggregationTree, BccGroth16};
-    use ark_ff::PrimeField;
-    use ark_r1cs_std::{fields::fp::FpVar, prelude::*};
-    use ark_relations::r1cs::{
-        ConstraintSynthesizer, ConstraintSystemRef, Result as R1CSResult, SynthesisError,
+    use crate::{
+        bcc_snark::{BccSNARK, CircuitSpecificSetupBccSNARK},
+        crypto::commitment::{constraints::CMVar, CM},
+        BccGroth16,
     };
+    use ark_ff::{PrimeField, Zero};
+    use ark_r1cs_std::{fields::fp::FpVar, prelude::*};
+    use ark_relations::r1cs::{ConstraintSynthesizer, ConstraintSystemRef, SynthesisError};
     use ark_std::{
-        ops::Add,
-        rand::{RngCore, SeedableRng},
+        rand::{CryptoRng, RngCore, SeedableRng},
         test_rng,
         vec::Vec,
     };
-    use serde_json::map;
 
     type E = ark_bn254::Bn254;
     type F = ark_bn254::Fr;
 
-    #[derive(Clone)]
-    struct Circuit<F: PrimeField> {
-        aggr_msg: Option<F>,
-        aggr_rand: Option<F>,
-        list_msg: Option<Vec<F>>,
-        list_rand: Option<Vec<F>>,
-        rand: Option<F>,
+    fn random_cm<R: RngCore + CryptoRng>(n: usize, rng: &mut R) -> Vec<CM<F>> {
+        let cm: Vec<CM<F>> = (0..n)
+            .map(|_| CM {
+                msg: F::from(100u32),
+                rand: F::from(100u32),
+            })
+            .collect();
+        cm
     }
 
-    impl<F: PrimeField> ConstraintSynthesizer<F> for Circuit<F> {
-        fn generate_constraints(self, cs: ConstraintSystemRef<F>) -> R1CSResult<()> {
-            let aggr_msg = FpVar::new_input(cs.clone(), || {
-                self.aggr_msg.ok_or(SynthesisError::AssignmentMissing)
+    #[derive(Clone)]
+    pub struct BccCircuit<F: PrimeField> {
+        pub aggr: Option<CM<F>>,
+        pub list_cm: Option<Vec<CM<F>>>,
+        pub rand: Option<F>,
+    }
+
+    impl<F: PrimeField> BccCircuit<F> {
+        /// Create a new circuit
+        pub fn new(list_cm: Vec<CM<F>>, rand: F) -> Self {
+            let mut aggr = CM::zero();
+            let mut evaluate = rand;
+            for &cm in list_cm.iter() {
+                aggr += cm * evaluate;
+                evaluate *= rand;
+            }
+            Self {
+                aggr: Some(aggr),
+                list_cm: Some(list_cm),
+                rand: Some(rand),
+            }
+        }
+
+        /// Create a default circuit with all Zero
+        pub fn default(n: usize) -> Self {
+            Self {
+                aggr: Some(CM::zero()),
+                list_cm: Some(vec![CM::zero(); n]),
+                rand: Some(F::zero()),
+            }
+        }
+    }
+
+    impl<F: PrimeField> ConstraintSynthesizer<F> for BccCircuit<F> {
+        fn generate_constraints(
+            self,
+            cs: ConstraintSystemRef<F>,
+        ) -> ark_relations::r1cs::Result<()> {
+            let aggr = CMVar::new_witness(cs.clone(), || {
+                self.aggr.ok_or(SynthesisError::AssignmentMissing)
             })?;
 
-            let aggr_rand = FpVar::new_input(cs.clone(), || {
-                self.aggr_rand.ok_or(SynthesisError::AssignmentMissing)
+            let list_cm = Vec::<CMVar<F>>::new_witness(cs.clone(), || {
+                self.list_cm.ok_or(SynthesisError::AssignmentMissing)
             })?;
 
-            let mut list_msg = Vec::<FpVar<F>>::new_input(cs.clone(), || {
-                self.list_msg
-                    .clone()
-                    .ok_or(SynthesisError::AssignmentMissing)
-            })?;
-
-            let mut list_rand = Vec::<FpVar<F>>::new_input(cs.clone(), || {
-                self.list_rand.ok_or(SynthesisError::AssignmentMissing)
-            })?;
-
-            let rand = FpVar::new_input(cs.clone(), || {
+            let rand = FpVar::new_witness(cs.clone(), || {
                 self.rand.ok_or(SynthesisError::AssignmentMissing)
             })?;
 
-            let mut _aggr_msg = list_msg[0].clone();
-
-            let mut nodes = list_msg.len();
-            println!("Nodes: {}", nodes);
-            let mut coeff = rand.clone();
-
-            while nodes > 1 {
-                let even: FpVar<F> = list_msg.iter().skip(1).step_by(2).sum();
-                _aggr_msg += even * &coeff;
-
-                coeff = coeff.clone() * &coeff;
-                nodes >>= 1;
-                for i in 0..nodes {
-                    list_msg[i] = list_msg[i << 1].clone().add(list_msg[(i << 1) + 1].clone());
-                }
-                list_msg.truncate(nodes);
+            let mut _aggr = CMVar::new_constant(cs.clone(), CM::zero())?;
+            let mut evaluate = rand.clone();
+            for cm in list_cm.iter() {
+                _aggr += cm.clone() * &evaluate;
+                evaluate *= &rand;
             }
 
-            let _aggr_rand = list_rand.compute_root(rand.clone());
-
-            aggr_msg.enforce_equal(&_aggr_msg)?;
-            aggr_rand.enforce_equal(&_aggr_rand)?;
-
+            aggr.enforce_equal(&_aggr)?;
             Ok(())
         }
     }
 
     #[test]
     fn test_circuit() {
-        const BATCH_SIZE: usize = 1024;
-        const M: usize = 1;
-        let num_committed_witness: usize = (M + 1) * (BATCH_SIZE + 1) + 1; // agg(M + 1), list[BATCH_SIZE](M + 1), tau
-        let aggr_msg = F::from(0u64);
-        let aggr_rand = F::from(0u64);
-        let list_msg = vec![F::from(0u64); M];
-        let list_rand = vec![F::from(0u64); M];
-        let rand = F::from(0u64);
-
-        let circuit = Circuit {
-            aggr_msg: Some(aggr_msg),
-            aggr_rand: Some(aggr_rand),
-            list_msg: Some(list_msg.clone()),
-            list_rand: Some(list_rand.clone()),
-            rand: Some(rand),
-        };
-
+        let batch_size: usize = 1 << 10;
+        let num_committed_witness = 2 * (batch_size + 1) + 1;
         let mut rng = ark_std::rand::rngs::StdRng::seed_from_u64(test_rng().next_u64());
-        let (pk, vk) =
-            BccGroth16::<E>::circuit_specific_setup(circuit, num_committed_witness, &mut rng)
-                .unwrap();
 
-        let committed_witness = [&list_msg[..], &list_rand[..]].concat();
+        println!("Generate parameters...");
+        let mock = BccCircuit::<F>::default(batch_size);
 
-        println!("Commit proof dependent");
-        let (_list_cm, proof_dependent_cm, tau) =
-            BccGroth16::<E>::commit(&pk.ck, committed_witness.as_slice(), &mut rng).unwrap();
+        println!("Generate CRS...");
+        let (pk, vk) = BccGroth16::<E>::setup(mock, num_committed_witness, &mut rng).unwrap();
 
-        let circuit = Circuit {
-            aggr_msg: Some(aggr_msg),
-            aggr_rand: Some(aggr_rand),
-            list_msg: Some(list_msg.clone()),
-            list_rand: Some(list_rand.clone()),
-            rand: Some(tau),
-        };
+        // make random cm (prev, curr)
+        let list_cm = random_cm(batch_size, &mut rng);
+        let committed_witness = list_cm
+            .iter()
+            .flat_map(|cm| [cm.msg, cm.rand])
+            .collect::<Vec<F>>();
 
-        println!("Commitment generation done...");
+        let (list_cm_g1, proof_dependent_cm, tau) =
+            BccGroth16::<E>::commit(&pk.ck, &committed_witness, &mut rng).unwrap();
+
+        // make circuit
+        let circuit = BccCircuit::<F>::new(list_cm, tau);
 
         println!("Generate proof...");
-        let _proof = BccGroth16::<E>::prove(&pk, circuit, &proof_dependent_cm, &mut rng).unwrap();
+        let proof =
+            BccGroth16::<E>::prove(&pk, circuit.clone(), &proof_dependent_cm, &mut rng).unwrap();
+
+        let public_inputs = [&list_cm_g1[..], &[proof_dependent_cm.cm]].concat();
+        assert_eq!(
+            public_inputs.len(),
+            batch_size + 1,
+            "Invalid Public Statement Size"
+        );
+
+        assert!(BccGroth16::<E>::verify(&vk, &proof, public_inputs.as_slice()).unwrap());
     }
 }
