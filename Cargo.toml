@@ -1,5 +1,5 @@
 [package]
-name = "cc-groth16"
+name = "cc-snark"
 version = "0.1.0"
 authors = ["kwonhojeong@hanyang.ac.kr", "sunjbs98@gmail.com"]
 categories = ["cryptography"]
@@ -32,6 +32,9 @@ derivative = { version = "2.0", features = ["use_core"], optional = true }
 rayon = { version = "1", optional = true }
 serde_json = "1.0.108"
 sha3 = "0.10.8"
+
+[dev-dependencies]
+ark-bn254 = "0.4.0"
 
 [profile.release]
 opt-level = 3

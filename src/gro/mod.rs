@@ -1,10 +1,4 @@
-pub mod cc_snark;
-use cc_snark::*;
-
-#[macro_use]
-extern crate ark_std;
-
-#[cfg(feature = "r1cs")]
+use crate::snark::{CircuitSpecificSetupCCSNARK, CCSNARK};
 
 /// Reduce an R1CS instance to a *Quadratic Arithmetic Program* instance.
 pub use ark_groth16::r1cs_to_qap;
@@ -12,13 +6,13 @@ pub use ark_groth16::r1cs_to_qap;
 /// Data structures used by the prover, verifier, and generator.
 pub mod data_structures;
 
-// /// Generate public parameters for the Groth16 zkSNARK construction.
+/// Generate public parameters for the Groth16 zkSNARK construction.
 pub mod generator;
 
-// /// Create proofs for the Groth16 zkSNARK construction.
+/// Create proofs for the Groth16 zkSNARK construction.
 pub mod prover;
 
-// /// Verify proofs for the Groth16 zkSNARK construction.
+/// Verify proofs for the Groth16 zkSNARK construction.
 pub mod verifier;
 
 pub use self::data_structures::*;
@@ -27,7 +21,7 @@ pub use self::verifier::*;
 use ark_ec::pairing::Pairing;
 use ark_groth16::r1cs_to_qap::{LibsnarkReduction, R1CSToQAP};
 use ark_relations::r1cs::{ConstraintSynthesizer, SynthesisError};
-use ark_std::{marker::PhantomData, rand::RngCore, vec::Vec};
+use ark_std::{marker::PhantomData, rand::RngCore};
 
 pub struct CCGroth16<E: Pairing, QAP: R1CSToQAP = LibsnarkReduction> {
     _p: PhantomData<(E, QAP)>,
