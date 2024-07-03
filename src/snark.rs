@@ -1,4 +1,4 @@
-//! This crate contains traits that define the basic behaviour of SNARKs.
+//! This crate contains traits that define the basic behaviour of ccSNARKs.
 
 #![cfg_attr(not(feature = "std"), no_std)]
 #![warn(

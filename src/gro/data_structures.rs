@@ -206,7 +206,7 @@ impl<E: Pairing> From<PreparedVerifyingKey<E>> for VerifyingKey<E> {
 
 impl<E: Pairing> From<VerifyingKey<E>> for PreparedVerifyingKey<E> {
     fn from(other: VerifyingKey<E>) -> Self {
-        crate::prepare_verifying_key(&other)
+        super::prepare_verifying_key(&other)
     }
 }
 

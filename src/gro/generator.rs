@@ -1,4 +1,4 @@
-use crate::{r1cs_to_qap::R1CSToQAP, CCGroth16, CommittingKey, ProvingKey, Vec, VerifyingKey};
+use super::{r1cs_to_qap::R1CSToQAP, CCGroth16, CommittingKey, ProvingKey, VerifyingKey};
 use ark_ec::{pairing::Pairing, scalar_mul::fixed_base::FixedBase, CurveGroup};
 use ark_ff::{Field, PrimeField, UniformRand, Zero};
 use ark_poly::{EvaluationDomain, GeneralEvaluationDomain};
@@ -6,8 +6,7 @@ use ark_relations::r1cs::{
     ConstraintSynthesizer, ConstraintSystem, OptimizationGoal, Result as R1CSResult,
     SynthesisError, SynthesisMode,
 };
-use ark_std::rand::Rng;
-use ark_std::{cfg_into_iter, cfg_iter};
+use ark_std::{cfg_into_iter, cfg_iter, rand::Rng, vec::Vec};
 
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;

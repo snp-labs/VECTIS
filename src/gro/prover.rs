@@ -1,6 +1,4 @@
-use crate::{
-    r1cs_to_qap::R1CSToQAP, CCGroth16, Commitment, CommittingKey, Proof, ProvingKey, VerifyingKey,
-};
+use super::{r1cs_to_qap::R1CSToQAP, CCGroth16, Proof, ProvingKey, VerifyingKey};
 use ark_ec::{pairing::Pairing, AffineRepr, CurveGroup, VariableBaseMSM};
 use ark_ff::{Field, PrimeField, UniformRand, Zero};
 use ark_poly::GeneralEvaluationDomain;

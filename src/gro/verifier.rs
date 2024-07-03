@@ -1,9 +1,9 @@
-use ark_ec::{pairing::Pairing, AffineRepr, CurveGroup, VariableBaseMSM};
-use ark_ff::{BigInteger, PrimeField};
+use ark_ec::{pairing::Pairing, AffineRepr, CurveGroup};
+use ark_ff::PrimeField;
 use ark_relations::r1cs::{Result as R1CSResult, SynthesisError};
 use core::ops::{AddAssign, Neg};
 
-use crate::{r1cs_to_qap::R1CSToQAP, CCGroth16, PreparedVerifyingKey, Proof, VerifyingKey};
+use super::{r1cs_to_qap::R1CSToQAP, CCGroth16, PreparedVerifyingKey, Proof, VerifyingKey};
 
 /// Prepare the verifying key `vk` for use in proof verification.
 pub fn prepare_verifying_key<E: Pairing>(vk: &VerifyingKey<E>) -> PreparedVerifyingKey<E> {
