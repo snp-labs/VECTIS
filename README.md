@@ -15,7 +15,7 @@ This is implementation of the batch ccSNARK protocol
 | ┃┃┣`constraints.rs`  | Trait of the batch commitment gadget                           |
 | ┃┃┗`mod.rs`          | Trait of the batch commitment scheme                           |
 | ┣`gro/`              | Implementation of the ccGrooth16 (LegoSNARK with Batch Commit) |
-| ┣`solidity/`          | Implementation of useful utils to format data                  |
+| ┣`solidity/`         | Implementation of useful utils to format data                  |
 
 ## Batch Commitment Gadget
 
@@ -30,8 +30,9 @@ This is implementation of the batch ccSNARK protocol
 
 **Verifier**
 
-1. Use `Pedersen::<C>::aggregate` to aggregate the commitments.
-2. Update the proof-dependent commitment by adding the aggregation of the commitments.
+1. Use `Pedersen::<C>::challenge` to retrieve the challenge for aggregation.
+2. Use `Pedersen::<C>::aggregate` to aggregate the commitments.
+3. Update the proof-dependent commitment by adding the aggregation of the commitments.
 
 ```rust
 // Aggregate commitments
