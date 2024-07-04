@@ -69,7 +69,7 @@ impl<E: Pairing, QAP: R1CSToQAP> CCGroth16<E, QAP> {
 
         let setup_time = start_timer!(|| "Batched Commit Carrying Groth16::Generator");
         let cs = ConstraintSystem::new_ref();
-        cs.set_optimization_goal(OptimizationGoal::Constraints);
+        cs.set_optimization_goal(OptimizationGoal::Weight);
         cs.set_mode(SynthesisMode::Setup);
 
         // Synthesize the circuit.
@@ -211,18 +211,20 @@ impl<E: Pairing, QAP: R1CSToQAP> CCGroth16<E, QAP> {
         let (batch_g1, proof_dependent_g1) =
             committed_witness_g1.split_at(num_aggregation_variables);
 
+        let ck = CommittingKey {
+            batch_g1: E::G1::normalize_batch(batch_g1),
+            proof_dependent_g1: E::G1::normalize_batch(proof_dependent_g1),
+            gamma_eta_g1: gamma_eta_g1.into_affine(),
+            delta_eta_g1: delta_eta_g1.into_affine(),
+        };
+
         let vk = VerifyingKey::<E> {
+            ck,
             alpha_g1: alpha_g1.into_affine(),
             beta_g2: beta_g2.into_affine(),
             gamma_g2: gamma_g2.into_affine(),
             delta_g2: delta_g2.into_affine(),
             gamma_abc_g1: E::G1::normalize_batch(gamma_abc_g1),
-        };
-
-        let ck = CommittingKey {
-            batch_g1: E::G1::normalize_batch(batch_g1),
-            proof_dependent_g1: E::G1::normalize_batch(proof_dependent_g1),
-            gamma_eta_g1: gamma_eta_g1.into_affine(),
         };
 
         let batch_normalization_time = start_timer!(|| "Convert proving key elements to affine");
@@ -237,10 +239,8 @@ impl<E: Pairing, QAP: R1CSToQAP> CCGroth16<E, QAP> {
 
         Ok(ProvingKey {
             vk,
-            ck,
             beta_g1: beta_g1.into_affine(),
             delta_g1: delta_g1.into_affine(),
-            delta_eta_g1: delta_eta_g1.into_affine(),
             a_query,
             b_g1_query,
             b_g2_query,

@@ -19,13 +19,20 @@ use ark_std::rand::{CryptoRng, RngCore};
 
 /// The basic functionality for a Commit Carry SNARK.
 pub trait CCSNARK<E: Pairing> {
+    /// The information required by the verifier to check a proof for a specific
+    /// circuit *C*.
+    type CommittingKey: Clone + CanonicalSerialize + CanonicalDeserialize;
     /// The information required by the prover to produce a proof for a specific
+
     /// circuit *C*.
     type ProvingKey: Clone + CanonicalSerialize + CanonicalDeserialize;
 
     /// The information required by the verifier to check a proof for a specific
     /// circuit *C*.
     type VerifyingKey: Clone + CanonicalSerialize + CanonicalDeserialize;
+
+    /// The proof dependent commitment (with opening) output by the prover.
+    type Commitment: Clone + CanonicalSerialize + CanonicalDeserialize;
 
     /// The proof output by the prover.
     type Proof: Clone + CanonicalSerialize + CanonicalDeserialize;
@@ -44,13 +51,21 @@ pub trait CCSNARK<E: Pairing> {
         num_aggregation_variables: usize,
         num_committed_witness_variables: usize,
         rng: &mut R,
-    ) -> Result<(Self::ProvingKey, Self::VerifyingKey), Self::Error>;
+    ) -> Result<(Self::ProvingKey, Self::VerifyingKey, Self::CommittingKey), Self::Error>;
+
+    /// Generates a commitment to the committed_witness
+    fn commit<R: RngCore + CryptoRng>(
+        circuit_ck: &Self::CommittingKey,
+        committed_witness: &[E::ScalarField],
+        rng: &mut R,
+    ) -> Result<Self::Commitment, Self::Error>;
 
     /// Generates a proof of satisfaction of the arithmetic circuit C (specified
     /// as R1CS constraints).
     fn prove<C: ConstraintSynthesizer<E::ScalarField>, R: RngCore + CryptoRng>(
         circuit_pk: &Self::ProvingKey,
         circuit: C,
+        commitment: &Self::Commitment,
         rng: &mut R,
     ) -> Result<Self::Proof, Self::Error>;
 
@@ -90,7 +105,7 @@ pub trait CircuitSpecificSetupCCSNARK<E: Pairing>: CCSNARK<E> {
         num_aggregation_variables: usize,
         num_committed_witness_variables: usize,
         rng: &mut R,
-    ) -> Result<(Self::ProvingKey, Self::VerifyingKey), Self::Error> {
+    ) -> Result<(Self::ProvingKey, Self::VerifyingKey, Self::CommittingKey), Self::Error> {
         <Self as CCSNARK<E>>::circuit_specific_setup(
             circuit,
             num_aggregation_variables,

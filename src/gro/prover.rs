@@ -1,4 +1,8 @@
-use super::{r1cs_to_qap::R1CSToQAP, CCGroth16, Proof, ProvingKey, VerifyingKey};
+use crate::crypto::commitment::{pedersen::Pedersen, CommitmentScheme};
+
+use super::{
+    r1cs_to_qap::R1CSToQAP, CCGroth16, Commitment, CommittingKey, Proof, ProvingKey, VerifyingKey,
+};
 use ark_ec::{pairing::Pairing, AffineRepr, CurveGroup, VariableBaseMSM};
 use ark_ff::{Field, PrimeField, UniformRand, Zero};
 use ark_poly::GeneralEvaluationDomain;
@@ -19,21 +23,47 @@ use rayon::prelude::*;
 type D<F> = GeneralEvaluationDomain<F>;
 
 impl<E: Pairing, QAP: R1CSToQAP> CCGroth16<E, QAP> {
-    /// Create a Groth16 proof using randomness `r` and `s` and
+    /// Create multiple commitments, proof dependent commitment, and challenge (tau)
+    #[inline]
+    pub fn batch_commit_with_challenge(
+        circuit_ck: &CommittingKey<E>,
+        committed_witness: &[E::ScalarField],
+        rng: &mut impl Rng,
+    ) -> R1CSResult<Commitment<E>> {
+        let commit_time = start_timer!(|| "ccGroth16::Commit");
+        let proof_dependent_time = start_timer!(|| "Proof Dependent Commitment");
+        let committed_witness_g1 =
+            Pedersen::<E::G1>::commit(&circuit_ck.proof_dependent_g1, &committed_witness);
+
+        let opening = E::ScalarField::rand(rng);
+        let opening_g1 = circuit_ck.gamma_eta_g1.mul(opening);
+
+        let proof_dependent_commitment_g1 = (committed_witness_g1 + opening_g1).into_affine();
+        let commitment = Commitment::<E> {
+            cm: proof_dependent_commitment_g1,
+            opening,
+        };
+        end_timer!(proof_dependent_time);
+        end_timer!(commit_time);
+
+        Ok(commitment)
+    }
+
+    /// Create a ccGroth16 proof using randomness `r` and `s` and
     /// the provided R1CS-to-QAP reduction, using the provided
     /// R1CS constraint matrices.
     #[inline]
     pub fn create_proof_with_reduction_and_matrices(
         pk: &ProvingKey<E>,
+        commitment: &Commitment<E>,
         r: E::ScalarField,
         s: E::ScalarField,
-        v: E::ScalarField,
         matrices: &ConstraintMatrices<E::ScalarField>,
         num_inputs: usize,
         num_constraints: usize,
         full_assignment: &[E::ScalarField],
     ) -> R1CSResult<Proof<E>> {
-        let prover_time = start_timer!(|| "Groth16::Prover");
+        let prover_time = start_timer!(|| "ccGroth16::Prover");
         let witness_map_time = start_timer!(|| "R1CS to QAP witness map");
         let h = QAP::witness_map_from_matrices::<E::ScalarField, D<E::ScalarField>>(
             matrices,
@@ -44,8 +74,15 @@ impl<E: Pairing, QAP: R1CSToQAP> CCGroth16<E, QAP> {
         end_timer!(witness_map_time);
         let input_assignment = &full_assignment[1..num_inputs];
         let aux_assignment = &full_assignment[num_inputs..];
-        let proof =
-            Self::create_proof_with_assignment(pk, r, s, v, &h, input_assignment, aux_assignment)?;
+        let proof = Self::create_proof_with_assignment(
+            pk,
+            commitment,
+            r,
+            s,
+            &h,
+            input_assignment,
+            aux_assignment,
+        )?;
         end_timer!(prover_time);
 
         Ok(proof)
@@ -54,16 +91,16 @@ impl<E: Pairing, QAP: R1CSToQAP> CCGroth16<E, QAP> {
     #[inline]
     fn create_proof_with_assignment(
         pk: &ProvingKey<E>,
+        commitment: &Commitment<E>,
         r: E::ScalarField,
         s: E::ScalarField,
-        v: E::ScalarField,
         h: &[E::ScalarField],
         input_assignment: &[E::ScalarField],
         aux_assignment: &[E::ScalarField],
     ) -> R1CSResult<Proof<E>> {
-        let num_aggregation_variables = pk.ck.batch_g1.len();
+        let num_aggregation_variables = pk.vk.ck.batch_g1.len();
         let num_committed_witness_variables =
-            num_aggregation_variables + pk.ck.proof_dependent_g1.len();
+            num_aggregation_variables + pk.vk.ck.proof_dependent_g1.len();
 
         let c_acc_time = start_timer!(|| "Compute C");
         let h_assignment = cfg_into_iter!(h)
@@ -85,17 +122,6 @@ impl<E: Pairing, QAP: R1CSToQAP> CCGroth16<E, QAP> {
         let r_s_delta_g1 = pk.delta_g1 * (r * s);
 
         end_timer!(c_acc_time);
-
-        // Comput D (Proof Dependent Commitment) in G1
-        let d_g1_acc_time = start_timer!(|| "Compute D (Proof Dependent Commitment) in G1");
-        let v_gamma_eta_g1 = pk.ck.gamma_eta_g1.mul(v);
-        let mut g_d = E::G1::msm_bigint(
-            &pk.ck.proof_dependent_g1,
-            &aux_assignment[num_aggregation_variables..num_committed_witness_variables],
-        );
-        g_d += &v_gamma_eta_g1;
-
-        end_timer!(d_g1_acc_time);
 
         let input_assignment = input_assignment
             .iter()
@@ -137,7 +163,7 @@ impl<E: Pairing, QAP: R1CSToQAP> CCGroth16<E, QAP> {
         end_timer!(b_g2_acc_time);
 
         let c_time = start_timer!(|| "Finish C");
-        let v_delta_eta_g1 = pk.delta_eta_g1.mul(v);
+        let v_delta_eta_g1 = pk.vk.ck.delta_eta_g1.mul(commitment.opening);
         let mut g_c = s_g_a;
         g_c += &r_g1_b;
         g_c -= &r_s_delta_g1;
@@ -150,7 +176,7 @@ impl<E: Pairing, QAP: R1CSToQAP> CCGroth16<E, QAP> {
             a: g_a.into_affine(),
             b: g2_b.into_affine(),
             c: g_c.into_affine(),
-            d: g_d.into_affine(),
+            d: commitment.cm,
         })
     }
 
@@ -161,6 +187,7 @@ impl<E: Pairing, QAP: R1CSToQAP> CCGroth16<E, QAP> {
     pub fn create_random_proof_with_reduction<C>(
         circuit: C,
         pk: &ProvingKey<E>,
+        commitment: &Commitment<E>,
         rng: &mut impl Rng,
     ) -> R1CSResult<Proof<E>>
     where
@@ -168,9 +195,8 @@ impl<E: Pairing, QAP: R1CSToQAP> CCGroth16<E, QAP> {
     {
         let r = E::ScalarField::rand(rng);
         let s = E::ScalarField::rand(rng);
-        let v = E::ScalarField::rand(rng);
 
-        Self::create_proof_with_reduction(circuit, pk, r, s, v)
+        Self::create_proof_with_reduction(circuit, pk, commitment, r, s)
     }
 
     /// Create a Groth16 proof that is *not* zero-knowledge with the provided
@@ -179,6 +205,7 @@ impl<E: Pairing, QAP: R1CSToQAP> CCGroth16<E, QAP> {
     pub fn create_proof_with_reduction_no_zk<C>(
         circuit: C,
         pk: &ProvingKey<E>,
+        commitment: &Commitment<E>,
     ) -> R1CSResult<Proof<E>>
     where
         C: ConstraintSynthesizer<E::ScalarField>,
@@ -186,7 +213,7 @@ impl<E: Pairing, QAP: R1CSToQAP> CCGroth16<E, QAP> {
         Self::create_proof_with_reduction(
             circuit,
             pk,
-            E::ScalarField::zero(),
+            commitment,
             E::ScalarField::zero(),
             E::ScalarField::zero(),
         )
@@ -198,9 +225,9 @@ impl<E: Pairing, QAP: R1CSToQAP> CCGroth16<E, QAP> {
     pub fn create_proof_with_reduction<C>(
         circuit: C,
         pk: &ProvingKey<E>,
+        commitment: &Commitment<E>,
         r: E::ScalarField,
         s: E::ScalarField,
-        v: E::ScalarField,
     ) -> R1CSResult<Proof<E>>
     where
         E: Pairing,
@@ -211,7 +238,7 @@ impl<E: Pairing, QAP: R1CSToQAP> CCGroth16<E, QAP> {
         let cs = ConstraintSystem::new_ref();
 
         // Set the optimization goal
-        cs.set_optimization_goal(OptimizationGoal::Constraints);
+        cs.set_optimization_goal(OptimizationGoal::Weight);
 
         // Synthesize the circuit.
         let synthesis_time = start_timer!(|| "Constraint synthesis");
@@ -230,9 +257,9 @@ impl<E: Pairing, QAP: R1CSToQAP> CCGroth16<E, QAP> {
         let prover = cs.borrow().unwrap();
         let proof = Self::create_proof_with_assignment(
             pk,
+            commitment,
             r,
             s,
-            v,
             &h,
             &prover.instance_assignment[1..],
             &prover.witness_assignment,
@@ -253,27 +280,34 @@ impl<E: Pairing, QAP: R1CSToQAP> CCGroth16<E, QAP> {
         rng: &mut impl Rng,
     ) -> Proof<E> {
         // These are our rerandomization factors. They must be nonzero and uniformly sampled.
-        let (mut r1, mut r2) = (E::ScalarField::zero(), E::ScalarField::zero());
-        while r1.is_zero() || r2.is_zero() {
+        let (mut r1, mut r2, mut r3) = (
+            E::ScalarField::zero(),
+            E::ScalarField::zero(),
+            E::ScalarField::zero(),
+        );
+        while r1.is_zero() || r2.is_zero() || r3.is_zero() {
             r1 = E::ScalarField::rand(rng);
             r2 = E::ScalarField::rand(rng);
+            r3 = E::ScalarField::rand(rng);
         }
 
         // See figure 1 in the paper referenced above:
         //   A' = (1/r₁)A
         //   B' = r₁B + r₁r₂(δG₂)
-        //   C' = C + r₂A
+        //   C' = C + r₂A + r₃(η / δG₁)
+        //   D' = D + r₃(η / γG1)
 
         // We can unwrap() this because r₁ is guaranteed to be nonzero
         let new_a = proof.a.mul(r1.inverse().unwrap());
         let new_b = proof.b.mul(r1) + &vk.delta_g2.mul(r1 * &r2);
-        let new_c = proof.c + proof.a.mul(r2).into_affine();
+        let new_c = proof.c + proof.a.mul(r2).into_affine() + &vk.ck.delta_eta_g1.mul(r3);
+        let new_d = proof.d + &vk.ck.gamma_eta_g1.mul(r3);
 
         Proof {
             a: new_a.into_affine(),
             b: new_b.into_affine(),
             c: new_c.into_affine(),
-            d: E::G1Affine::default(),
+            d: new_d.into_affine(),
         }
     }
 

@@ -3,7 +3,6 @@ pub use constraints::BatchCommitmentGadget;
 
 pub mod pedersen;
 
-use ark_ff::PrimeField;
 use ark_std::vec::Vec;
 
 pub trait CommitmentScheme {
@@ -11,34 +10,28 @@ pub trait CommitmentScheme {
     type Base;
     type Commitment;
 
-    fn commit(
-        committing_key: &Vec<Self::Base>,
-        commitments: &Vec<Self::Scalar>,
-    ) -> Self::Commitment;
+    fn commit(committing_key: &[Self::Base], commitments: &[Self::Scalar]) -> Self::Commitment;
 }
 
 /// The basic functionality for a Batch Commitment Scheme.
-pub trait BatchCommitmentScheme {
-    type Scalar: PrimeField;
-    type Base;
+pub trait BatchCommitmentScheme: CommitmentScheme {
     type Challenge;
 
     // [cm_0, cm_1, ... cm_k, proof dependent cm]
     fn batch_commit(
-        commitments: &Vec<Vec<Self::Scalar>>,
-        batch_key: &Vec<Self::Base>,
-        proof_key: &Vec<Self::Base>,
-    ) -> (Vec<Self::Base>, Self::Base);
+        batch_key: &[Self::Base],
+        commitments: &[&[Self::Scalar]],
+    ) -> Vec<Self::Commitment>;
 
     fn challenge(
-        commitments: &Vec<Self::Base>,
+        commitments: &[Self::Base],
         proof_dependent_commitment: &Self::Base,
     ) -> Self::Challenge;
 
-    fn aggregate(commitments: &Vec<Self::Base>, tau: Self::Challenge) -> Self::Base;
+    fn aggregate(commitments: &[Self::Commitment], tau: Self::Challenge) -> Self::Commitment;
 
-    fn cc_aggregate(
-        commitments: &Vec<Vec<Self::Scalar>>,
+    fn scalar_aggregate(
+        commitments: &[&[Self::Scalar]],
         tau: Self::Challenge,
         initial: Option<Self::Challenge>,
     ) -> Vec<Self::Scalar>;

@@ -6,6 +6,8 @@ use core::ops::Neg;
 use std::fs::{self, File};
 use std::path::Path;
 
+use crate::solidity::Solidity;
+
 // use crate::utils::ToVec;
 
 /// Read Vec<u8> from file
@@ -84,11 +86,21 @@ impl<E: Pairing> ToString for Proof<E> {
     }
 }
 
-// impl ToVec<ark_bn254::Bn254> for Proof<ark_bn254::Bn254> {
-//     fn to_vec(&self) -> Vec<String> {
-//         [self.a.to_vec(), self.b.to_vec(), self.c.to_vec()].concat()
-//     }
-// }
+impl<E: Pairing> Solidity for Proof<E>
+where
+    E::G1Affine: Solidity,
+    E::G2Affine: Solidity,
+{
+    fn to_solidity(&self) -> Vec<String> {
+        [
+            self.a.to_solidity(),
+            self.b.to_solidity(),
+            self.c.to_solidity(),
+            self.d.to_solidity(),
+        ]
+        .concat()
+    }
+}
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -103,6 +115,9 @@ pub struct CommittingKey<E: Pairing> {
     pub proof_dependent_g1: Vec<E::G1Affine>,
     /// The 'eta/gamma * G' where `G` is the generator of `E::G1`.
     pub gamma_eta_g1: E::G1Affine,
+
+    /// The 'eta/delta * G', where `G` is the generator of `E::G1`.
+    pub delta_eta_g1: E::G1Affine,
 }
 
 impl<E: Pairing> Default for CommittingKey<E> {
@@ -111,6 +126,7 @@ impl<E: Pairing> Default for CommittingKey<E> {
             batch_g1: Vec::new(),
             proof_dependent_g1: Vec::new(),
             gamma_eta_g1: E::G1Affine::default(),
+            delta_eta_g1: E::G1Affine::default(),
         }
     }
 }
@@ -120,6 +136,9 @@ impl<E: Pairing> Default for CommittingKey<E> {
 /// A verification key in the Groth16 cc-SNARK.
 #[derive(Clone, Debug, PartialEq, CanonicalSerialize, CanonicalDeserialize)]
 pub struct VerifyingKey<E: Pairing> {
+    /// The underlying commitment key.
+    pub ck: CommittingKey<E>,
+
     /// The `alpha * G`, where `G` is the generator of `E::G1`.
     pub alpha_g1: E::G1Affine,
     /// The `alpha * H`, where `H` is the generator of `E::G2`.
@@ -138,6 +157,7 @@ pub struct VerifyingKey<E: Pairing> {
 impl<E: Pairing> Default for VerifyingKey<E> {
     fn default() -> Self {
         Self {
+            ck: CommittingKey::default(),
             alpha_g1: E::G1Affine::default(),
             beta_g2: E::G2Affine::default(),
             gamma_g2: E::G2Affine::default(),
@@ -170,19 +190,28 @@ impl<E: Pairing> ToString for VerifyingKey<E> {
     }
 }
 
-// impl ToVec<ark_bn254::Bn254> for VerifyingKey<ark_bn254::Bn254> {
-//     fn to_vec(&self) -> Vec<String> {
-//         [
-//             self.alpha_g1.to_vec(),
-//             (self.beta_g2.into_group().neg()).into_affine().to_vec(),
-//             (self.delta_g2.into_group().neg()).into_affine().to_vec(),
-//             self.gamma_abc_g1.first().unwrap().to_vec(),
-//             (self.gamma_g2.into_group().neg()).into_affine().to_vec(),
-//             self.gamma_abc_g1.last().unwrap().to_vec(),
-//         ]
-//         .concat()
-//     }
-// }
+impl<E: Pairing> Solidity for VerifyingKey<E>
+where
+    E::G1Affine: Solidity,
+    E::G2Affine: Solidity,
+{
+    fn to_solidity(&self) -> Vec<String> {
+        [
+            self.alpha_g1.to_solidity(),
+            (self.beta_g2.into_group().neg())
+                .into_affine()
+                .to_solidity(),
+            (self.delta_g2.into_group().neg())
+                .into_affine()
+                .to_solidity(),
+            (self.gamma_g2.into_group().neg())
+                .into_affine()
+                .to_solidity(),
+            self.gamma_abc_g1.to_solidity(),
+        ]
+        .concat()
+    }
+}
 
 /// Preprocessed verification key parameters that enable faster verification
 /// at the expense of larger size in memory.
@@ -228,14 +257,10 @@ impl<E: Pairing> Default for PreparedVerifyingKey<E> {
 pub struct ProvingKey<E: Pairing> {
     /// The underlying verification key.
     pub vk: VerifyingKey<E>,
-    /// The underlying commitment key.
-    pub ck: CommittingKey<E>,
     /// The element `beta * G` in `E::G1`.
     pub beta_g1: E::G1Affine,
     /// The element `delta * G` in `E::G1`.
     pub delta_g1: E::G1Affine,
-    /// The 'eta/delta * G', where `G` is the generator of `E::G1`.
-    pub delta_eta_g1: E::G1Affine,
     /// The elements `a_i * G` in `E::G1`.
     pub a_query: Vec<E::G1Affine>,
     /// The elements `b_i * G` in `E::G1`.
@@ -252,10 +277,8 @@ impl<E: Pairing> Default for ProvingKey<E> {
     fn default() -> Self {
         Self {
             vk: VerifyingKey::default(),
-            ck: CommittingKey::default(),
             beta_g1: E::G1Affine::default(),
             delta_g1: E::G1Affine::default(),
-            delta_eta_g1: E::G1Affine::default(),
             a_query: Vec::new(),
             b_g1_query: Vec::new(),
             b_g2_query: Vec::new(),

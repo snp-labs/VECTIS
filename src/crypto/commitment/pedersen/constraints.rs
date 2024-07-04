@@ -1,7 +1,6 @@
 use std::{fmt::Debug, marker::PhantomData};
 
 use ark_ec::CurveGroup;
-use ark_ff::PrimeField;
 use ark_r1cs_std::{boolean::Boolean, fields::FieldVar};
 use ark_relations::r1cs::SynthesisError;
 use ark_std::ops::Add;
@@ -22,7 +21,6 @@ where
 impl<C, FV> BatchCommitmentGadget<Pedersen<C>, C::ScalarField> for PedersenGadget<C, FV>
 where
     C: CurveGroup,
-    C::BaseField: PrimeField,
     FV: FieldVar<C::ScalarField, C::ScalarField> + Clone + Debug + Add,
 {
     type ScalarVar = FV;

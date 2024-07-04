@@ -4,7 +4,7 @@ pub use constraints::PedersenGadget;
 use std::marker::PhantomData;
 
 use ark_ec::{AffineRepr, CurveGroup};
-use ark_ff::{BigInteger, PrimeField};
+use ark_ff::{BigInteger, Field, PrimeField};
 use ark_std::vec::Vec;
 use sha3::{Digest, Keccak256};
 
@@ -13,22 +13,18 @@ use super::{BatchCommitmentScheme, CommitmentScheme};
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
 
+type BasePrimeField<C> = <<C as CurveGroup>::BaseField as Field>::BasePrimeField;
+
 pub struct Pedersen<C: CurveGroup> {
     _group: PhantomData<C>,
 }
 
-impl<C> CommitmentScheme for Pedersen<C>
-where
-    C: CurveGroup,
-{
+impl<C: CurveGroup> CommitmentScheme for Pedersen<C> {
     type Scalar = C::ScalarField;
     type Base = C::Affine;
     type Commitment = C::Affine;
 
-    fn commit(
-        committing_key: &Vec<Self::Base>,
-        commitments: &Vec<Self::Scalar>,
-    ) -> Self::Commitment {
+    fn commit(committing_key: &[Self::Base], commitments: &[Self::Scalar]) -> Self::Commitment {
         let commitments = cfg_iter!(commitments)
             .map(|cm| cm.into_bigint())
             .collect::<Vec<_>>();
@@ -36,43 +32,30 @@ where
     }
 }
 
-impl<C> BatchCommitmentScheme for Pedersen<C>
-where
-    C: CurveGroup,
-    C::BaseField: PrimeField,
-{
-    type Scalar = C::ScalarField;
-    type Base = C::Affine;
+impl<C: CurveGroup> BatchCommitmentScheme for Pedersen<C> {
     type Challenge = C::ScalarField;
 
     fn batch_commit(
-        commitments: &Vec<Vec<Self::Scalar>>,
-        batch_key: &Vec<Self::Base>,
-        proof_key: &Vec<Self::Base>,
-    ) -> (Vec<Self::Base>, Self::Base) {
+        batch_key: &[Self::Base],
+        commitments: &[&[Self::Scalar]],
+    ) -> Vec<Self::Commitment> {
         let commitments_g1 = cfg_iter!(commitments)
             .map(|cm| Pedersen::<C>::commit(batch_key, cm))
             .collect::<Vec<Self::Base>>();
 
-        // vec_of_vecs.into_iter().flat_map(|v| v.into_iter()).collect()
-
-        let proof_dependent_commitment = cfg_iter!(commitments)
-            .flat_map(|cm| cm.clone())
-            .collect::<Vec<Self::Scalar>>();
-        let proof_dependent_commitment_g1 =
-            Pedersen::<C>::commit(proof_key, &proof_dependent_commitment);
-
-        (commitments_g1, proof_dependent_commitment_g1)
+        commitments_g1
     }
 
     fn challenge(
-        commitments: &Vec<Self::Base>,
+        commitments: &[Self::Commitment],
         proof_dependent_commitment: &Self::Base,
     ) -> Self::Challenge {
         let mut hasher = Keccak256::new();
 
         let mut update_axis = |v: &C::BaseField| {
-            let bigint = v.into_bigint();
+            let string = v.to_string();
+            let scalar = string.parse::<BasePrimeField<C>>().ok().unwrap();
+            let bigint = scalar.into_bigint();
             let bytes = bigint.to_bytes_be();
             hasher.update(&bytes);
         };
@@ -92,7 +75,7 @@ where
         C::ScalarField::from_be_bytes_mod_order(&raw)
     }
 
-    fn aggregate(commitments: &Vec<Self::Base>, tau: Self::Challenge) -> Self::Base {
+    fn aggregate(commitments: &[Self::Commitment], tau: Self::Challenge) -> Self::Commitment {
         let mut powers_of_tau = vec![];
         let mut cur = tau;
         for _ in 0..commitments.len() {
@@ -103,8 +86,8 @@ where
         C::msm_bigint(&commitments[..], &powers_of_tau[..]).into_affine()
     }
 
-    fn cc_aggregate(
-        commitments: &Vec<Vec<Self::Scalar>>,
+    fn scalar_aggregate(
+        commitments: &[&[Self::Scalar]],
         tau: Self::Challenge,
         initial: Option<Self::Challenge>,
     ) -> Vec<Self::Scalar> {
