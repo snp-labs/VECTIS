@@ -25,8 +25,9 @@ This is implementation of the batch ccSNARK protocol
 
 **Prover**
 
-1. Use `Pedersen::<C>::batch_commit` to calculate the commitments and the proof-dependent commitment.
-2. Use `Pedersen::<C>::challenge` to retrieve the challenge for aggregation.
+1. Use `CCGroth16::<E>::commit` to commit the proof-dependent commitment
+2. Use `Pedersen::<C>::batch_commit` to calculate the commitments
+3. Use `Pedersen::<C>::challenge` to retrieve the challenge for aggregation.
 
 **Verifier**
 
