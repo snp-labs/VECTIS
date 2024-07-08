@@ -5,7 +5,7 @@ use std::marker::PhantomData;
 
 use ark_ec::{AffineRepr, CurveGroup};
 use ark_ff::{BigInteger, Field, PrimeField};
-use ark_std::vec::Vec;
+use ark_std::{vec::Vec, Zero};
 use sha3::{Digest, Keccak256};
 
 use super::{BatchCommitmentScheme, CommitmentScheme};
@@ -53,15 +53,17 @@ impl<C: CurveGroup> BatchCommitmentScheme for Pedersen<C> {
         let mut hasher = Keccak256::new();
 
         let mut update_axis = |v: &C::BaseField| {
+            let zero = BasePrimeField::<C>::zero();
             let string = v.to_string();
-            let scalar = string.parse::<BasePrimeField<C>>().ok().unwrap();
+            let scalar = string.parse::<BasePrimeField<C>>().ok().unwrap_or(zero);
             let bigint = scalar.into_bigint();
             let bytes = bigint.to_bytes_be();
             hasher.update(&bytes);
         };
 
         let mut update_point = |v: &C::Affine| {
-            let (x, y) = v.xy().unwrap();
+            let zero = C::BaseField::zero();
+            let (x, y) = v.xy().unwrap_or((&zero, &zero));
             update_axis(x);
             update_axis(y);
         };

@@ -168,13 +168,13 @@ impl<C: CurveGroup> ConstraintSynthesizer<C::ScalarField> for ZKSTCircuit<C> {
         let permutation = permuted
             .iter()
             .fold(FpVar::Constant(C::ScalarField::zero()), |acc, msg| {
-                acc * (msg + &tau)
+                acc * (&tau + msg)
             });
 
         let _permutation = delta_commitments
             .iter()
             .fold(FpVar::Constant(C::ScalarField::zero()), |acc, msg| {
-                acc * (&msg[0] + &tau)
+                acc * (&tau - &msg[0])
             });
 
         _permutation
@@ -320,14 +320,17 @@ where
         generator.push(gen_instant.elapsed().as_micros());
 
         // make random cm (prev, curr)
-        let current_commitments = test_commitments::<E::ScalarField>(batch_size, 2);
-        let delta_commitments = current_commitments.clone();
-        let commitments = [&current_commitments[..], &delta_commitments[..]].concat();
-        let mut permuted = delta_commitments
-            .iter()
+        let current_commitments = vec![vec![E::ScalarField::from(0u64); 2]; batch_size];
+        let mut delta_commitments = test_commitments::<E::ScalarField>(batch_size, 2);
+        let mut permuted = cfg_iter!(delta_commitments)
             .map(|cm| cm[0])
             .collect::<Vec<E::ScalarField>>();
         permuted.sort();
+        cfg_iter_mut!(delta_commitments).for_each(|cm| {
+            cm[0] = -cm[0];
+            cm[1] = -cm[1];
+        });
+        let commitments = [&current_commitments[..], &delta_commitments[..]].concat();
 
         // Generage Proof Dependent Commitment
         let committed_witness = cfg_iter!(commitments)
@@ -340,7 +343,7 @@ where
         let slices = cfg_iter!(commitments).map(|cm| &cm[..]).collect::<Vec<_>>();
         let commitments_g1 = Pedersen::<E::G1>::batch_commit(&pk.vk.ck.batch_g1, &slices[..]);
         let tau = Pedersen::<E::G1>::challenge(
-            &commitments_g1[batch_size / 2..],
+            &commitments_g1[batch_size..],
             &proof_dependent_commitment.cm,
         );
 
@@ -358,17 +361,30 @@ where
         prover.push(prv_instant.elapsed().as_micros());
 
         if repeat == 1 {
+            let prev_commitments = test_commitments(batch_size, 2);
+            let slices = cfg_iter!(prev_commitments)
+                .map(|cm| &cm[..])
+                .collect::<Vec<_>>();
+            let prev_g1 = Pedersen::<E::G1>::batch_commit(&pk.vk.ck.batch_g1, &slices);
+
             println!(
                 "const plain = {:?}",
                 vec![permuted[0], permuted[permuted.len() >> 1]].to_solidity()
             );
             println!(
                 "const cm = {:?}",
-                vec![commitments_g1[0], commitments_g1[1]].to_solidity()
+                vec![commitments_g1[batch_size], commitments_g1[batch_size + 1]].to_solidity()
+            );
+            println!(
+                "const prev = {:?}",
+                vec![prev_g1[0], prev_g1[1]].to_solidity()
             );
             println!("const proof = {:?}", proof.to_solidity());
             println!("const vk = {:?}", vk.to_solidity());
-            println!("\nconst batch{} = {{ plain, cm, proof, vk }}", batch_size);
+            println!(
+                "\nconst batch{} = {{ plain, cm, prev, proof, vk }}",
+                batch_size
+            );
             println!("\nexport default batch{}", batch_size);
         }
 
@@ -411,7 +427,7 @@ pub mod bn254 {
     fn batch_commitment_circuit_num_constraints() {
         let mut result: Vec<usize> = vec![];
         for n in LOG_MIN..=LOG_MAX {
-            let batch_size = 1 << (n + 1);
+            let batch_size = 1 << n;
 
             let cs_timer = start_timer!(|| format!("Batch Size: 2^{}", n));
             let mock = BatchCommitmentCircuit::<C>::mock(batch_size);
@@ -434,7 +450,7 @@ pub mod bn254 {
     fn batch_commitment_circuit_without_key() {
         let mut rng = R::seed_from_u64(test_rng().next_u64());
         for n in LOG_MIN..=LOG_MAX {
-            let batch_size = 1 << n;
+            let batch_size = 1 << (n + 1);
 
             let (gen, prv, vrf) =
                 process_batch_commitment_circuit::<E, R>(NUM_REPEAT, batch_size, &mut rng);
