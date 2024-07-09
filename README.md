@@ -24,7 +24,7 @@ $$
 A \cdot B = \alpha \cdot \beta + C \cdot \delta + D \cdot \gamma + PI \cdot \zeta
 $$
 
-- `gamma_abc_g1` of `VerifyingKey` in the `ccGro16` into commiting keys of `CommitingKey` for committed witness
+- `gamma_abc_g1` of `VerifyingKey` in the `ccGro16` into committing keys of `CommittingKey` for committed witness
 - Add `zeta_abc_g1` and `zeta_g2` into `VerifyingKey` for public inputs
 
 ## Batch Commitment Gadget
