@@ -2,7 +2,7 @@ use std::time::Instant;
 
 use ark_ec::{pairing::Pairing, AffineRepr, CurveGroup};
 use ark_ff::PrimeField;
-use ark_r1cs_std::{alloc::AllocVar, eq::EqGadget, fields::fp::FpVar};
+use ark_r1cs_std::{alloc::AllocVar, boolean::Boolean, eq::EqGadget, fields::fp::FpVar};
 use ark_relations::r1cs::{ConstraintSynthesizer, ConstraintSystemRef, SynthesisError};
 use ark_std::{
     rand::{CryptoRng, RngCore},
@@ -20,7 +20,7 @@ use crate::{
         pedersen::{Pedersen, PedersenGadget},
         BatchCommitmentGadget, BatchCommitmentScheme,
     },
-    gro::CCGroth16,
+    gro::{CCGroth16, Commitment, CommittingKey, Proof, ProvingKey, VerifyingKey},
     snark::{CircuitSpecificSetupCCSNARK, CCSNARK},
     solidity::Solidity,
 };
@@ -91,8 +91,9 @@ impl<C: CurveGroup> ConstraintSynthesizer<C::ScalarField> for BatchCommitmentCir
 #[derive(Clone)]
 struct ZKSTCircuit<C: CurveGroup> {
     // public input
-    pub permuted: Option<Vec<C::ScalarField>>,
     pub tau: Option<C::ScalarField>,
+    pub flag: Option<bool>,
+    pub permuted: Option<Vec<C::ScalarField>>,
 
     // committed witness
     pub aggregation: Option<Vec<C::ScalarField>>,
@@ -102,18 +103,20 @@ struct ZKSTCircuit<C: CurveGroup> {
 
 impl<C: CurveGroup> ZKSTCircuit<C> {
     pub fn new(
+        tau: C::ScalarField,
+        flag: bool,
         permuted: Vec<C::ScalarField>,
         current_commitments: Vec<Vec<C::ScalarField>>,
         delta_commitments: Vec<Vec<C::ScalarField>>,
-        tau: C::ScalarField,
     ) -> Self {
         let commitments = [&current_commitments[..], &delta_commitments[..]].concat();
         let slices: Vec<&[C::ScalarField]> = commitments.iter().map(|cm| &cm[..]).collect();
         let aggregation = Pedersen::<C>::scalar_aggregate(&slices, tau, None);
 
         Self {
-            permuted: Some(permuted),
             tau: Some(tau),
+            flag: Some(flag),
+            permuted: Some(permuted),
             aggregation: Some(aggregation),
             current_commitments: Some(current_commitments),
             delta_commitments: Some(delta_commitments),
@@ -122,8 +125,9 @@ impl<C: CurveGroup> ZKSTCircuit<C> {
 
     pub fn mock(batch_size: usize) -> Self {
         Self {
-            permuted: Some(vec![C::ScalarField::zero(); batch_size]),
             tau: Some(C::ScalarField::zero()),
+            flag: Some(false),
+            permuted: Some(vec![C::ScalarField::zero(); batch_size]),
             aggregation: Some(vec![C::ScalarField::zero(); 2]),
             current_commitments: Some(vec![vec![C::ScalarField::zero(); 2]; batch_size]),
             delta_commitments: Some(vec![vec![C::ScalarField::zero(); 2]; batch_size]),
@@ -136,13 +140,17 @@ impl<C: CurveGroup> ConstraintSynthesizer<C::ScalarField> for ZKSTCircuit<C> {
         self,
         cs: ConstraintSystemRef<C::ScalarField>,
     ) -> ark_relations::r1cs::Result<()> {
+        let tau = FpVar::new_input(cs.clone(), || {
+            self.tau.ok_or_else(|| SynthesisError::AssignmentMissing)
+        })?;
+
+        let flag = Boolean::new_input(cs.clone(), || {
+            self.flag.ok_or_else(|| SynthesisError::AssignmentMissing)
+        })?;
+
         let permuted = Vec::<FpVar<C::ScalarField>>::new_input(cs.clone(), || {
             self.permuted
                 .ok_or_else(|| SynthesisError::AssignmentMissing)
-        })?;
-
-        let tau = FpVar::new_input(cs.clone(), || {
-            self.tau.ok_or_else(|| SynthesisError::AssignmentMissing)
         })?;
 
         let aggregation = Vec::<FpVar<C::ScalarField>>::new_witness(cs.clone(), || {
@@ -178,7 +186,7 @@ impl<C: CurveGroup> ConstraintSynthesizer<C::ScalarField> for ZKSTCircuit<C> {
             });
 
         _permutation
-            .enforce_equal(&permutation)
+            .conditional_enforce_equal(&permutation, &flag)
             .expect("Permutation Check");
 
         // aggregation check
@@ -199,7 +207,8 @@ impl<C: CurveGroup> ConstraintSynthesizer<C::ScalarField> for ZKSTCircuit<C> {
 fn test_commitments<F: PrimeField>(num_commitments: usize, length: usize) -> Vec<Vec<F>> {
     let mut commitments = vec![];
     for i in 0..num_commitments {
-        commitments.push(vec![F::from(((i & 1) + 1) as u64); length]);
+        let value = ((i & 1) + 1) as u64;
+        commitments.push(vec![F::from(value); length]);
     }
     commitments
 }
@@ -290,120 +299,113 @@ where
     (generator.average(), prover.average(), aggregation.average())
 }
 
-fn process_zkst_circuit<E: Pairing, R: RngCore + CryptoRng>(
-    repeat: usize,
+fn zkst_circuit_setup<E: Pairing, R: RngCore + CryptoRng>(
     batch_size: usize,
     rng: &mut R,
-) -> (u128, u128, u128)
-where
+) -> (ProvingKey<E>, VerifyingKey<E>, CommittingKey<E>) {
+    let num_aggregation_variables = 2;
+    let num_committed_witness_variables = num_aggregation_variables + batch_size * 2;
+
+    let mock = ZKSTCircuit::<E::G1>::mock(batch_size);
+
+    CCGroth16::<E>::setup(
+        mock,
+        num_aggregation_variables,
+        num_committed_witness_variables,
+        rng,
+    )
+    .unwrap()
+}
+
+fn zkst_circuit_commit<E: Pairing, R: RngCore + CryptoRng>(
+    ck: &CommittingKey<E>,
+    commitments: &Vec<Vec<E::ScalarField>>,
+    rng: &mut R,
+) -> (Vec<E::G1Affine>, Commitment<E>, E::ScalarField) {
+    let batch_size = commitments.len() >> 1;
+
+    // Generage Proof Dependent Commitment
+    let committed_witness = cfg_iter!(commitments)
+        .flat_map(|cm| cfg_iter!(cm).cloned())
+        .collect::<Vec<_>>();
+
+    let proof_dependent_commitment =
+        CCGroth16::<E>::commit(&ck, &committed_witness[..], rng).unwrap();
+
+    // Batch Commitment Module
+    let slices = cfg_iter!(commitments).map(|cm| &cm[..]).collect::<Vec<_>>();
+    let commitments_g1 = Pedersen::<E::G1>::batch_commit(&ck.batch_g1, &slices);
+    let tau = Pedersen::<E::G1>::challenge(
+        &commitments_g1[batch_size..],
+        &proof_dependent_commitment.cm,
+    );
+    (commitments_g1, proof_dependent_commitment, tau)
+}
+
+fn zkst_circuit_prove_and_verify<E: Pairing, R: RngCore + CryptoRng>(
+    pk: &ProvingKey<E>,
+    vk: &VerifyingKey<E>,
+    circuit: ZKSTCircuit<E::G1>,
+    commitments: &Vec<E::G1Affine>,
+    proof_dependent_commitment: &Commitment<E>,
+    rng: &mut R,
+) -> Proof<E> {
+    let proof =
+        CCGroth16::<E>::prove(&pk, circuit.clone(), &proof_dependent_commitment, rng).unwrap();
+
+    let tau = circuit.tau.unwrap();
+    let flag = E::ScalarField::from(circuit.flag.unwrap());
+    let public_inputs = [vec![tau, flag], circuit.permuted.unwrap().clone()].concat();
+
+    // Aggregate commitments
+    let aggregation_g1 = Pedersen::<E::G1>::aggregate(commitments, tau);
+    // Update proof dependent commitment
+    let mut verify = proof.clone();
+    verify.d = (verify.d.into_group() + aggregation_g1.into_group()).into_affine();
+
+    assert!(
+        CCGroth16::<E>::verify(&vk, &public_inputs, &verify).unwrap(),
+        "Invalid Proof"
+    );
+    proof
+}
+
+fn zkst_circuit_solidity<E: Pairing>(
+    batch_size: usize,
+    permuted: &Vec<E::ScalarField>,
+    cm_update: &Vec<E::G1Affine>,
+    proof_update: &Proof<E>,
+    cm_exchange: &Vec<E::G1Affine>,
+    proof_exchange: &Proof<E>,
+    vk: &VerifyingKey<E>,
+) where
     E::G1Affine: Solidity,
     E::G2Affine: Solidity,
     E::ScalarField: Solidity,
 {
-    let mut generator = vec![];
-    let mut prover = vec![];
-    let mut aggregation = vec![];
-    for _ in 0..repeat {
-        let num_aggregation_variables = 2;
-        let num_committed_witness_variables = num_aggregation_variables + batch_size * 2;
-
-        let mock = ZKSTCircuit::<E::G1>::mock(batch_size);
-
-        let gen_instant = Instant::now();
-        let (pk, vk, ck) = CCGroth16::<E>::setup(
-            mock,
-            num_aggregation_variables,
-            num_committed_witness_variables,
-            rng,
-        )
-        .unwrap();
-        generator.push(gen_instant.elapsed().as_micros());
-
-        // make random cm (prev, curr)
-        let current_commitments = vec![vec![E::ScalarField::from(0u64); 2]; batch_size];
-        let mut delta_commitments = test_commitments::<E::ScalarField>(batch_size, 2);
-        let mut permuted = cfg_iter!(delta_commitments)
-            .map(|cm| cm[0])
-            .collect::<Vec<E::ScalarField>>();
-        permuted.sort();
-        cfg_iter_mut!(delta_commitments).for_each(|cm| {
-            cm[0] = -cm[0];
-            cm[1] = -cm[1];
-        });
-        let commitments = [&current_commitments[..], &delta_commitments[..]].concat();
-
-        // Generage Proof Dependent Commitment
-        let committed_witness = cfg_iter!(commitments)
-            .flat_map(|cm| cfg_iter!(cm).cloned())
-            .collect::<Vec<_>>();
-        let proof_dependent_commitment =
-            CCGroth16::<E>::commit(&ck, &committed_witness[..], rng).unwrap();
-
-        // Batch Commitment Module
-        let slices = cfg_iter!(commitments).map(|cm| &cm[..]).collect::<Vec<_>>();
-        let commitments_g1 = Pedersen::<E::G1>::batch_commit(&pk.vk.ck.batch_g1, &slices[..]);
-        let tau = Pedersen::<E::G1>::challenge(
-            &commitments_g1[batch_size..],
-            &proof_dependent_commitment.cm,
-        );
-
-        // Make circuit
-        let circuit = ZKSTCircuit::<E::G1>::new(
-            permuted.clone(),
-            current_commitments,
-            delta_commitments,
-            tau,
-        );
-
-        let prv_instant = Instant::now();
-        let mut proof =
-            CCGroth16::<E>::prove(&pk, circuit.clone(), &proof_dependent_commitment, rng).unwrap();
-        prover.push(prv_instant.elapsed().as_micros());
-
-        if repeat == 1 {
-            let prev_commitments = test_commitments(batch_size, 2);
-            let slices = cfg_iter!(prev_commitments)
-                .map(|cm| &cm[..])
-                .collect::<Vec<_>>();
-            let prev_g1 = Pedersen::<E::G1>::batch_commit(&pk.vk.ck.batch_g1, &slices);
-
-            println!(
-                "const plain = {:?}",
-                vec![permuted[0], permuted[permuted.len() >> 1]].to_solidity()
-            );
-            println!(
-                "const cm = {:?}",
-                vec![commitments_g1[batch_size], commitments_g1[batch_size + 1]].to_solidity()
-            );
-            println!(
-                "const prev = {:?}",
-                vec![prev_g1[0], prev_g1[1]].to_solidity()
-            );
-            println!("const proof = {:?}", proof.to_solidity());
-            println!("const vk = {:?}", vk.to_solidity());
-            println!(
-                "\nconst batch{} = {{ plain, cm, prev, proof, vk }}",
-                batch_size
-            );
-            println!("\nexport default batch{}", batch_size);
-        }
-
-        let public_inputs = [permuted.clone(), vec![tau]].concat();
-
-        let agg_instant = Instant::now();
-        // Aggregate commitments
-        let aggregation_g1 = Pedersen::<E::G1>::aggregate(&commitments_g1, tau);
-        // Update proof dependent commitment
-        proof.d = (proof.d.into_group() + aggregation_g1.into_group()).into_affine();
-        aggregation.push(agg_instant.elapsed().as_micros());
-
-        assert!(
-            CCGroth16::<E>::verify(&vk, public_inputs.as_slice(), &proof).unwrap(),
-            "Invalid Proof"
-        );
-    }
-
-    (generator.average(), prover.average(), aggregation.average())
+    println!("const vk = {:?}", vk.to_solidity());
+    println!("const ck = {:?}", vk.ck.batch_g1.to_solidity());
+    println!(
+        "const amount = {:?}",
+        vec![permuted[0], permuted[permuted.len() >> 1]].to_solidity()
+    );
+    println!(
+        "const updateCm = {:?}",
+        vec![cm_update[batch_size], cm_update[batch_size + 1]].to_solidity()
+    );
+    println!("const updateProof = {:?}", proof_update.to_solidity());
+    println!(
+        "const exchangeCm = {:?}",
+        vec![cm_exchange[batch_size], cm_exchange[batch_size + 1]].to_solidity()
+    );
+    println!("const exchangeProof = {:?}", proof_exchange.to_solidity());
+    println!("const update = {{ cm: updateCm, proof: updateProof }}");
+    println!("const exchange = {{ amount, cm: exchangeCm, proof: exchangeProof }}");
+    println!(
+        "\nconst batch{} = {{ vk, ck, update, exchange }}",
+        batch_size
+    );
+    println!("\nexport default batch{}", batch_size);
 }
 
 pub mod bn254 {
@@ -417,6 +419,7 @@ pub mod bn254 {
 
     type C = ark_bn254::G1Projective;
     type E = ark_bn254::Bn254;
+    type F = ark_bn254::Fr;
     type R = StdRng;
     const STATISTICS: bool = true;
     const NUM_REPEAT: usize = if STATISTICS { 1 } else { 10 };
@@ -465,18 +468,77 @@ pub mod bn254 {
     }
 
     #[test]
-    fn zkst_circuit_without_key() {
+    fn zkst_circuit_scenario() {
         let mut rng = R::seed_from_u64(test_rng().next_u64());
         for n in LOG_MIN..=LOG_MAX {
             let batch_size = 1 << n;
 
-            let (gen, prv, vrf) = process_zkst_circuit::<E, R>(NUM_REPEAT, batch_size, &mut rng);
-            println!(
-                "Batch Size: 2^{} Generator: {} Prover: {} Aggregation: {}",
-                n,
-                format_time(gen),
-                format_time(prv),
-                format_time(vrf)
+            let (pk, vk, ck) = zkst_circuit_setup::<E, R>(batch_size, &mut rng);
+
+            // update wallet commitments
+            let cm_update_curr = test_commitments::<F>(batch_size, 2);
+            let cm_update_delta = cm_update_curr.clone();
+            let cm_update = [&cm_update_curr[..], &cm_update_delta[..]].concat();
+            let (cm_update_g1, d_update, tau_update) =
+                zkst_circuit_commit(&ck, &cm_update, &mut rng);
+
+            // prove and verify
+            let permuted_update = vec![F::zero(); batch_size];
+            let circuit_update = ZKSTCircuit::new(
+                tau_update,
+                false,
+                permuted_update.clone(),
+                cm_update_curr,
+                cm_update_delta,
+            );
+            let proof_update = zkst_circuit_prove_and_verify(
+                &pk,
+                &vk,
+                circuit_update.clone(),
+                &cm_update_g1,
+                &d_update,
+                &mut rng,
+            );
+
+            let cm_exchange_curr = vec![vec![F::from(0u64); 2]; batch_size];
+            let cm_exchange_delta = test_commitments::<F>(batch_size, 2);
+            let mut permuted_exchange = cfg_iter!(cm_exchange_delta)
+                .map(|cm| cm[0])
+                .collect::<Vec<F>>();
+            permuted_exchange.sort();
+            let cm_exchange_delta = cfg_iter!(cm_exchange_delta)
+                .map(|cm| vec![-cm[0], -cm[1]])
+                .collect::<Vec<Vec<F>>>();
+            let cm_exchange = [&cm_exchange_curr[..], &cm_exchange_delta[..]].concat();
+            let (cm_exchange_g1, d_exchange, tau_exchange) =
+                zkst_circuit_commit(&ck, &cm_exchange, &mut rng);
+
+            // prove and verify
+            let circuit_exchange = ZKSTCircuit::new(
+                tau_exchange,
+                true,
+                permuted_exchange.clone(),
+                cm_exchange_curr,
+                cm_exchange_delta,
+            );
+            let proof_exchange = zkst_circuit_prove_and_verify(
+                &pk,
+                &vk,
+                circuit_exchange.clone(),
+                &cm_exchange_g1,
+                &d_exchange,
+                &mut rng,
+            );
+
+            // print solidity form
+            zkst_circuit_solidity(
+                batch_size,
+                &permuted_exchange,
+                &cm_update_g1,
+                &proof_update,
+                &cm_exchange_g1,
+                &proof_exchange,
+                &vk,
             );
         }
     }

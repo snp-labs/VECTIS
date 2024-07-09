@@ -1,20 +1,31 @@
 mod short_weierstrass;
 mod twisted_edwards;
+use std::fmt::Display;
+
 use ark_ff::{Fp, Fp2, Fp2Config, FpConfig};
+use ark_std::Zero;
 
 pub trait Solidity {
     fn to_solidity(&self) -> Vec<String>;
 }
 
+fn to_solidity<T: Display + Zero>(x: T) -> String {
+    if x.is_zero() {
+        "0".to_string()
+    } else {
+        x.to_string()
+    }
+}
+
 impl<P: FpConfig<N>, const N: usize> Solidity for Fp<P, N> {
     fn to_solidity(&self) -> Vec<String> {
-        vec![self.to_string()]
+        vec![to_solidity(*self)]
     }
 }
 
 impl<P: Fp2Config> Solidity for Fp2<P> {
     fn to_solidity(&self) -> Vec<String> {
-        vec![self.c1.to_string(), self.c0.to_string()]
+        vec![to_solidity(self.c1), to_solidity(self.c0)]
     }
 }
 
