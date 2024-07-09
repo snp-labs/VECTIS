@@ -28,6 +28,7 @@ impl<E: Pairing, QAP: R1CSToQAP> CCGroth16<E, QAP> {
         let beta = E::ScalarField::rand(rng);
         let gamma = E::ScalarField::rand(rng);
         let delta = E::ScalarField::rand(rng);
+        let zeta = E::ScalarField::rand(rng);
         let eta = E::ScalarField::rand(rng);
 
         let g1_generator = E::G1::rand(rng);
@@ -41,6 +42,7 @@ impl<E: Pairing, QAP: R1CSToQAP> CCGroth16<E, QAP> {
             beta,
             gamma,
             delta,
+            zeta,
             eta,
             g1_generator,
             g2_generator,
@@ -57,6 +59,7 @@ impl<E: Pairing, QAP: R1CSToQAP> CCGroth16<E, QAP> {
         beta: E::ScalarField,
         gamma: E::ScalarField,
         delta: E::ScalarField,
+        zeta: E::ScalarField,
         eta: E::ScalarField,
         g1_generator: E::G1,
         g2_generator: E::G2,
@@ -119,12 +122,19 @@ impl<E: Pairing, QAP: R1CSToQAP> CCGroth16<E, QAP> {
 
         let scalar_bits = E::ScalarField::MODULUS_BIT_SIZE as usize;
 
+        let zeta_inverse = zeta.inverse().ok_or(SynthesisError::UnexpectedIdentity)?;
         let gamma_inverse = gamma.inverse().ok_or(SynthesisError::UnexpectedIdentity)?;
         let delta_inverse = delta.inverse().ok_or(SynthesisError::UnexpectedIdentity)?;
 
-        let gamma_abc = cfg_iter!(a[..num_cc_instance_variables])
-            .zip(&b[..num_cc_instance_variables])
-            .zip(&c[..num_cc_instance_variables])
+        let zeta_abc = cfg_iter!(a[..num_instance_variables])
+            .zip(&b[..num_instance_variables])
+            .zip(&c[..num_instance_variables])
+            .map(|((a, b), c)| (beta * a + &(alpha * b) + c) * &zeta_inverse)
+            .collect::<Vec<_>>();
+
+        let ck = cfg_iter!(a[num_instance_variables..num_cc_instance_variables])
+            .zip(&b[num_instance_variables..num_cc_instance_variables])
+            .zip(&c[num_instance_variables..num_cc_instance_variables])
             .map(|((a, b), c)| (beta * a + &(alpha * b) + c) * &gamma_inverse)
             .collect::<Vec<_>>();
 
@@ -156,18 +166,13 @@ impl<E: Pairing, QAP: R1CSToQAP> CCGroth16<E, QAP> {
         end_timer!(g1_window_time);
 
         // Generate the R1CS proving key
-        let verifying_key_time = start_timer!(|| "Generate the R1CS verifying key");
+        let proving_key_time = start_timer!(|| "Generate the R1CS proving key");
+
         let alpha_g1 = g1_generator * &alpha;
         let beta_g1 = g1_generator * &beta;
         let beta_g2 = g2_generator * &beta;
-        let gamma_g2 = g2_generator * &gamma;
         let delta_g1 = g1_generator * &delta;
         let delta_g2 = g2_generator * &delta;
-        end_timer!(verifying_key_time);
-
-        let proving_key_time = start_timer!(|| "Generate the R1CS proving key");
-        let gamma_eta_g1 = g1_generator * (gamma_inverse * &eta);
-        let delta_eta_g1 = g1_generator * (delta_inverse * &eta);
 
         // Compute the A-query
         let a_time = start_timer!(|| "Calculate A");
@@ -199,17 +204,25 @@ impl<E: Pairing, QAP: R1CSToQAP> CCGroth16<E, QAP> {
 
         end_timer!(proving_key_time);
 
-        // Generate R1CS verification key
-        let commitment_key_time = start_timer!(|| "Generate the R1CS commitment key");
-        let gamma_abc_g1 = FixedBase::msm::<E::G1>(scalar_bits, g1_window, &g1_table, &gamma_abc);
-        drop(g1_table);
+        // Generate ccSNARK commiting key
+        let commitment_key_time = start_timer!(|| "Generate ccSNARK commiting key");
+        let gamma_eta_g1 = g1_generator * (gamma_inverse * &eta);
+        let delta_eta_g1 = g1_generator * (delta_inverse * &eta);
+        let ck_g1 = FixedBase::msm::<E::G1>(scalar_bits, g1_window, &g1_table, &ck);
 
         end_timer!(commitment_key_time);
 
+        // Generate R1CS verification key
+        let verifying_key_time = start_timer!(|| "Generate the R1CS verification key");
+        let gamma_g2 = g2_generator * &gamma;
+        let zeta_g2 = g2_generator * &zeta;
+        let zeta_abc_g1 = FixedBase::msm::<E::G1>(scalar_bits, g1_window, &g1_table, &zeta_abc);
+        drop(g1_table);
+
+        end_timer!(verifying_key_time);
+
         // public inputs: [1, ...PI] (with tau for aggregation if exist)]
-        let (gamma_abc_g1, committed_witness_g1) = gamma_abc_g1.split_at(num_instance_variables);
-        let (batch_g1, proof_dependent_g1) =
-            committed_witness_g1.split_at(num_aggregation_variables);
+        let (batch_g1, proof_dependent_g1) = ck_g1.split_at(num_aggregation_variables);
 
         let ck = CommittingKey {
             batch_g1: E::G1::normalize_batch(batch_g1),
@@ -224,7 +237,8 @@ impl<E: Pairing, QAP: R1CSToQAP> CCGroth16<E, QAP> {
             beta_g2: beta_g2.into_affine(),
             gamma_g2: gamma_g2.into_affine(),
             delta_g2: delta_g2.into_affine(),
-            gamma_abc_g1: E::G1::normalize_batch(gamma_abc_g1),
+            zeta_g2: zeta_g2.into_affine(),
+            zeta_abc_g1: E::G1::normalize_batch(&zeta_abc_g1),
         };
 
         let batch_normalization_time = start_timer!(|| "Convert proving key elements to affine");

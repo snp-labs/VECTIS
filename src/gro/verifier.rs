@@ -12,6 +12,7 @@ pub fn prepare_verifying_key<E: Pairing>(vk: &VerifyingKey<E>) -> PreparedVerify
         alpha_g1_beta_g2: E::pairing(vk.alpha_g1, vk.beta_g2).0,
         gamma_g2_neg_pc: vk.gamma_g2.into_group().neg().into_affine().into(),
         delta_g2_neg_pc: vk.delta_g2.into_group().neg().into_affine().into(),
+        zeta_g2_neg_pc: vk.zeta_g2.into_group().neg().into_affine().into(),
     }
 }
 
@@ -22,12 +23,12 @@ impl<E: Pairing, QAP: R1CSToQAP> CCGroth16<E, QAP> {
         pvk: &PreparedVerifyingKey<E>,
         public_inputs: &[E::ScalarField],
     ) -> R1CSResult<E::G1> {
-        if (public_inputs.len() + 1) != pvk.vk.gamma_abc_g1.len() {
+        if (public_inputs.len() + 1) != pvk.vk.zeta_abc_g1.len() {
             return Err(SynthesisError::MalformedVerifyingKey);
         }
 
-        let mut g_ic = pvk.vk.gamma_abc_g1[0].into_group();
-        for (i, b) in public_inputs.iter().zip(pvk.vk.gamma_abc_g1.iter().skip(1)) {
+        let mut g_ic = pvk.vk.zeta_abc_g1[0].into_group();
+        for (i, b) in public_inputs.iter().zip(pvk.vk.zeta_abc_g1.iter().skip(1)) {
             g_ic.add_assign(&b.mul_bigint(i.into_bigint()));
         }
 
@@ -47,15 +48,15 @@ impl<E: Pairing, QAP: R1CSToQAP> CCGroth16<E, QAP> {
         let qap = E::multi_miller_loop(
             [
                 <E::G1Affine as Into<E::G1Prepared>>::into(proof.a),
-                (prepared_inputs.into_affine() + proof.d)
-                    .into_affine()
-                    .into(),
+                proof.d.into(),
                 proof.c.into(),
+                prepared_inputs.into(),
             ],
             [
                 proof.b.into(),
                 pvk.gamma_g2_neg_pc.clone(),
                 pvk.delta_g2_neg_pc.clone(),
+                pvk.zeta_g2_neg_pc.clone(),
             ],
         );
 

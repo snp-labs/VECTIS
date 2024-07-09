@@ -37,3 +37,6 @@ Cargo.lock
 
 ### Zed ###
 .zed/*
+
+### log ###
+logs/*

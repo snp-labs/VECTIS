@@ -17,6 +17,16 @@ This is implementation of the batch ccSNARK protocol
 | ┣`gro/`              | Implementation of the ccGrooth16 (LegoSNARK with Batch Commit) |
 | ┣`solidity/`         | Implementation of useful utils to format data                  |
 
+
+## ccGro16 with Public Inputs
+
+$$
+A \cdot B = \alpha \cdot \beta + C \cdot \delta + D \cdot \gamma + PI \cdot \zeta
+$$
+
+- `gamma_abc_g1` of `VerifyingKey` in the `ccGro16` into commiting keys of `CommitingKey` for committed witness
+- Add `zeta_abc_g1` and `zeta_g2` into `VerifyingKey` for public inputs
+
 ## Batch Commitment Gadget
 
 - All the aggregated values must be at the front of the committed witness
