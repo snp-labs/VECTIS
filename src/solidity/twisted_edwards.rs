@@ -1,7 +1,4 @@
-use ark_ec::{
-    twisted_edwards::{Affine, Projective, TECurveConfig},
-    AffineRepr,
-};
+use ark_ec::twisted_edwards::{Affine, Projective, TECurveConfig};
 
 use super::Solidity;
 
@@ -10,11 +7,7 @@ where
     P::BaseField: Solidity,
 {
     fn to_solidity(&self) -> Vec<String> {
-        [
-            self.x().unwrap().to_solidity(),
-            self.y().unwrap().to_solidity(),
-        ]
-        .concat()
+        [self.x.to_solidity(), self.y.to_solidity()].concat()
     }
 }
 

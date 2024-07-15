@@ -26,6 +26,35 @@ where
     type ScalarVar = FV;
     type ChallengeVar = FV;
 
+    fn aggregate(
+        commitments: Vec<Vec<Self::ScalarVar>>,
+        tau: Self::ChallengeVar,
+        initial: Option<Self::ChallengeVar>,
+    ) -> (Vec<Self::ScalarVar>, Self::ChallengeVar) {
+        let mut powers_of_tau = vec![];
+        let mut cur = initial.unwrap_or(tau.clone());
+        for _ in 0..commitments.len() {
+            powers_of_tau.push(cur.clone());
+            cur *= &tau;
+        }
+
+        let len = commitments[0].len();
+        let indicies = 0..len;
+
+        let aggregation = indicies
+            .map(|c| {
+                commitments
+                    .iter()
+                    .zip(powers_of_tau.iter())
+                    .fold(Self::ScalarVar::zero(), |acc, (cm, tau)| {
+                        acc + cm[c].clone() * tau
+                    })
+            })
+            .collect::<Vec<Self::ScalarVar>>();
+
+        (aggregation, cur)
+    }
+
     fn enforce_equal(
         aggregation: Vec<Self::ScalarVar>,
         commitments: Vec<Vec<Self::ScalarVar>>,

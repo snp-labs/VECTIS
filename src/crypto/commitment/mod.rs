@@ -24,15 +24,20 @@ pub trait BatchCommitmentScheme: CommitmentScheme {
     ) -> Vec<Self::Commitment>;
 
     fn challenge(
+        public_inputs: &[Self::Scalar],
         commitments: &[Self::Base],
         proof_dependent_commitment: &Self::Base,
     ) -> Self::Challenge;
 
-    fn aggregate(commitments: &[Self::Commitment], tau: Self::Challenge) -> Self::Commitment;
+    fn aggregate(
+        commitments: &[Self::Commitment],
+        tau: Self::Challenge,
+        initial: Option<Self::Challenge>,
+    ) -> (Self::Commitment, Self::Challenge);
 
     fn scalar_aggregate(
         commitments: &[&[Self::Scalar]],
         tau: Self::Challenge,
         initial: Option<Self::Challenge>,
-    ) -> Vec<Self::Scalar>;
+    ) -> (Vec<Self::Scalar>, Self::Challenge);
 }

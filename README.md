@@ -17,21 +17,21 @@ This is implementation of the batch ccSNARK protocol
 | ┣`gro/`              | Implementation of the ccGrooth16 (LegoSNARK with Batch Commit) |
 | ┣`solidity/`         | Implementation of useful utils to format data                  |
 
-
 ## ccGro16 with Public Inputs
 
 $$
-A \cdot B = \alpha \cdot \beta + C \cdot \delta + D \cdot \gamma + PI \cdot \zeta
+A \cdot B = \alpha \cdot \beta + C \cdot \delta + (PI + D) \cdot \gamma
 $$
 
-- `gamma_abc_g1` of `VerifyingKey` in the `ccGro16` into committing keys of `CommittingKey` for committed witness
-- Add `zeta_abc_g1` and `zeta_g2` into `VerifyingKey` for public inputs
+- All public inputs must be challenges
 
-## Batch Commitment Gadget
-
-- All the aggregated values must be at the front of the committed witness
+## Batch Commitment Scheme
 
 ### Steps
+
+**Circuit**
+
+- All the aggregated values must be at the front of the committed witness
 
 **Prover**
 
@@ -46,8 +46,13 @@ $$
 3. Update the proof-dependent commitment by adding the aggregation of the commitments.
 
 ```rust
+// Aggregate inputs
+let transposed = public_inputs.transpose();
+let slices = cfg_iter!(transposed).map(|x| &x[..]).collect::<Vec<_>>();
+let (aggregation_fr, initial) = Pedersen::<E::G1>::scalar_aggregate(&slices, tau, None);
 // Aggregate commitments
-let aggregation = Pedersen::<C>::aggregate(&commitments, tau);
+let (aggregation_g1, _) = Pedersen::<C>::aggregate(&commitments, tau, Some(initial));
 // Update proof dependent commitment
-proof.d = (proof.d.into_group() + aggregation.into_group()).into_affine();
+let aggregation = aggregation_g1 + vk.ck.batch_g1[0].into_group() * aggregation_fr[0];
+proof.d = (proof.d.into_group() + aggregation).into_affine();
 ```

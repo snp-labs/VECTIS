@@ -7,7 +7,7 @@ use ark_relations::r1cs::{ConstraintSynthesizer, ConstraintSystemRef, SynthesisE
 use ark_std::{
     rand::{CryptoRng, RngCore},
     vec::Vec,
-    Zero,
+    One, Zero,
 };
 
 #[cfg(feature = "parallel")]
@@ -38,7 +38,7 @@ struct BatchCommitmentCircuit<C: CurveGroup> {
 impl<C: CurveGroup> BatchCommitmentCircuit<C> {
     pub fn new(commitments: Vec<Vec<C::ScalarField>>, tau: C::ScalarField) -> Self {
         let slices: Vec<&[C::ScalarField]> = commitments.iter().map(|cm| &cm[..]).collect();
-        let aggregation = Pedersen::<C>::scalar_aggregate(&slices[..], tau, None);
+        let (aggregation, _) = Pedersen::<C>::scalar_aggregate(&slices[..], tau, None);
 
         Self {
             tau: Some(tau),
@@ -92,11 +92,11 @@ impl<C: CurveGroup> ConstraintSynthesizer<C::ScalarField> for BatchCommitmentCir
 struct ZKSTCircuit<C: CurveGroup> {
     // public input
     pub tau: Option<C::ScalarField>,
-    pub flag: Option<bool>,
-    pub permuted: Option<Vec<C::ScalarField>>,
 
     // committed witness
     pub aggregation: Option<Vec<C::ScalarField>>,
+    pub flag: Option<bool>,
+    pub permuted: Option<Vec<C::ScalarField>>,
     pub current_commitments: Option<Vec<Vec<C::ScalarField>>>,
     pub delta_commitments: Option<Vec<Vec<C::ScalarField>>>,
 }
@@ -109,15 +109,23 @@ impl<C: CurveGroup> ZKSTCircuit<C> {
         current_commitments: Vec<Vec<C::ScalarField>>,
         delta_commitments: Vec<Vec<C::ScalarField>>,
     ) -> Self {
+        let public_inputs = vec![vec![C::ScalarField::from(flag)], permuted.clone()]
+            .concat()
+            .transpose();
+        let slices: Vec<&[C::ScalarField]> = public_inputs.iter().map(|x| &x[..]).collect();
+        let (x_aggregation, initial) = Pedersen::<C>::scalar_aggregate(&slices, tau, None);
+        drop(public_inputs);
+
         let commitments = [&current_commitments[..], &delta_commitments[..]].concat();
         let slices: Vec<&[C::ScalarField]> = commitments.iter().map(|cm| &cm[..]).collect();
-        let aggregation = Pedersen::<C>::scalar_aggregate(&slices, tau, None);
+        let (mut aggregation, _) = Pedersen::<C>::scalar_aggregate(&slices, tau, Some(initial));
+        aggregation[0] += x_aggregation[0];
 
         Self {
             tau: Some(tau),
+            aggregation: Some(aggregation),
             flag: Some(flag),
             permuted: Some(permuted),
-            aggregation: Some(aggregation),
             current_commitments: Some(current_commitments),
             delta_commitments: Some(delta_commitments),
         }
@@ -126,9 +134,9 @@ impl<C: CurveGroup> ZKSTCircuit<C> {
     pub fn mock(batch_size: usize) -> Self {
         Self {
             tau: Some(C::ScalarField::zero()),
+            aggregation: Some(vec![C::ScalarField::zero(); 2]),
             flag: Some(false),
             permuted: Some(vec![C::ScalarField::zero(); batch_size]),
-            aggregation: Some(vec![C::ScalarField::zero(); 2]),
             current_commitments: Some(vec![vec![C::ScalarField::zero(); 2]; batch_size]),
             delta_commitments: Some(vec![vec![C::ScalarField::zero(); 2]; batch_size]),
         }
@@ -144,17 +152,17 @@ impl<C: CurveGroup> ConstraintSynthesizer<C::ScalarField> for ZKSTCircuit<C> {
             self.tau.ok_or_else(|| SynthesisError::AssignmentMissing)
         })?;
 
-        let flag = Boolean::new_input(cs.clone(), || {
-            self.flag.ok_or_else(|| SynthesisError::AssignmentMissing)
-        })?;
-
-        let permuted = Vec::<FpVar<C::ScalarField>>::new_input(cs.clone(), || {
-            self.permuted
+        let aggregation = Vec::<FpVar<C::ScalarField>>::new_witness(cs.clone(), || {
+            self.aggregation
                 .ok_or_else(|| SynthesisError::AssignmentMissing)
         })?;
 
-        let aggregation = Vec::<FpVar<C::ScalarField>>::new_witness(cs.clone(), || {
-            self.aggregation
+        let flag = Boolean::new_witness(cs.clone(), || {
+            self.flag.ok_or_else(|| SynthesisError::AssignmentMissing)
+        })?;
+
+        let permuted = Vec::<FpVar<C::ScalarField>>::new_witness(cs.clone(), || {
+            self.permuted
                 .ok_or_else(|| SynthesisError::AssignmentMissing)
         })?;
 
@@ -190,8 +198,21 @@ impl<C: CurveGroup> ConstraintSynthesizer<C::ScalarField> for ZKSTCircuit<C> {
             .expect("Permutation Check");
 
         // aggregation check
-        let commitments =
-            [current_commitments, delta_commitments].concat::<Vec<FpVar<C::ScalarField>>>();
+        let flag = flag
+            .select(
+                &FpVar::Constant(C::ScalarField::one()),
+                &FpVar::Constant(C::ScalarField::zero()),
+            )
+            .unwrap();
+
+        let public_inputs = vec![vec![flag], permuted]
+            .concat()
+            .transpose()
+            .iter()
+            .map(|x| vec![x[0].clone(), FpVar::Constant(C::ScalarField::zero())])
+            .collect();
+        let commitments = [public_inputs, current_commitments, delta_commitments]
+            .concat::<Vec<FpVar<C::ScalarField>>>();
         PedersenGadget::<C, FpVar<C::ScalarField>>::enforce_equal(
             aggregation,
             commitments,
@@ -256,10 +277,8 @@ where
         // Batch Commitment Module
         let slices = cfg_iter!(commitments).map(|cm| &cm[..]).collect::<Vec<_>>();
         let commitments_g1 = Pedersen::<E::G1>::batch_commit(&pk.vk.ck.batch_g1, &slices[..]);
-        let tau = Pedersen::<E::G1>::challenge(
-            &commitments_g1[batch_size / 2..],
-            &proof_dependent_commitment.cm,
-        );
+        let tau =
+            Pedersen::<E::G1>::challenge(&[], &commitments_g1, &proof_dependent_commitment.cm);
 
         // Make circuit
         let circuit = BatchCommitmentCircuit::<E::G1>::new(commitments, tau);
@@ -276,17 +295,17 @@ where
             );
             println!("const proof = {:?}", proof.to_solidity());
             println!("const vk = {:?}", vk.to_solidity());
-            println!("\nconst batch{} = {{ cm, proof, vk }}", batch_size / 2);
-            println!("\nexport default batch{}", batch_size / 2);
+            println!("\nconst batch{} = {{ cm, proof, vk }}", batch_size);
+            println!("\nexport default batch{}", batch_size);
         }
 
         let public_inputs = [tau];
 
         let agg_instant = Instant::now();
         // Aggregate commitments
-        let aggregation_g1 = Pedersen::<E::G1>::aggregate(&commitments_g1, tau);
+        let (aggregation_g1, _) = Pedersen::<E::G1>::aggregate(&commitments_g1, tau, None);
         // Update proof dependent commitment
-        proof.d = (proof.d.into_group() + aggregation_g1.into_group()).into_affine();
+        proof.d = (proof.d.into_group() + aggregation_g1).into_affine();
         aggregation.push(agg_instant.elapsed().as_micros());
 
         // In Batch Commitment Circuit, there is no different public inputs
@@ -304,7 +323,7 @@ fn zkst_circuit_setup<E: Pairing, R: RngCore + CryptoRng>(
     rng: &mut R,
 ) -> (ProvingKey<E>, VerifyingKey<E>, CommittingKey<E>) {
     let num_aggregation_variables = 2;
-    let num_committed_witness_variables = num_aggregation_variables + batch_size * 2;
+    let num_committed_witness_variables = num_aggregation_variables + batch_size * 3 + 1;
 
     let mock = ZKSTCircuit::<E::G1>::mock(batch_size);
 
@@ -319,6 +338,7 @@ fn zkst_circuit_setup<E: Pairing, R: RngCore + CryptoRng>(
 
 fn zkst_circuit_commit<E: Pairing, R: RngCore + CryptoRng>(
     ck: &CommittingKey<E>,
+    public_inputs: &Vec<E::ScalarField>,
     commitments: &Vec<Vec<E::ScalarField>>,
     rng: &mut R,
 ) -> (Vec<E::G1Affine>, Commitment<E>, E::ScalarField) {
@@ -329,13 +349,14 @@ fn zkst_circuit_commit<E: Pairing, R: RngCore + CryptoRng>(
         .flat_map(|cm| cfg_iter!(cm).cloned())
         .collect::<Vec<_>>();
 
-    let proof_dependent_commitment =
-        CCGroth16::<E>::commit(&ck, &committed_witness[..], rng).unwrap();
+    let committed = [&public_inputs[..], &committed_witness].concat();
+    let proof_dependent_commitment = CCGroth16::<E>::commit(&ck, &committed[..], rng).unwrap();
 
     // Batch Commitment Module
     let slices = cfg_iter!(commitments).map(|cm| &cm[..]).collect::<Vec<_>>();
     let commitments_g1 = Pedersen::<E::G1>::batch_commit(&ck.batch_g1, &slices);
     let tau = Pedersen::<E::G1>::challenge(
+        public_inputs,
         &commitments_g1[batch_size..],
         &proof_dependent_commitment.cm,
     );
@@ -356,12 +377,25 @@ fn zkst_circuit_prove_and_verify<E: Pairing, R: RngCore + CryptoRng>(
     let tau = circuit.tau.unwrap();
     let flag = E::ScalarField::from(circuit.flag.unwrap());
     let public_inputs = [vec![tau, flag], circuit.permuted.unwrap().clone()].concat();
+    let (public_inputs, committed) = public_inputs.split_at(1);
 
     // Aggregate commitments
-    let aggregation_g1 = Pedersen::<E::G1>::aggregate(commitments, tau);
+    let committed = committed.to_vec().transpose();
+    let slices = cfg_iter!(committed).map(|x| &x[..]).collect::<Vec<_>>();
+    let (aggregation_fr, initial) = Pedersen::<E::G1>::scalar_aggregate(&slices, tau, None);
+    let (aggregation_g1, _) = Pedersen::<E::G1>::aggregate(commitments, tau, Some(initial));
     // Update proof dependent commitment
     let mut verify = proof.clone();
-    verify.d = (verify.d.into_group() + aggregation_g1.into_group()).into_affine();
+    let aggregation = aggregation_g1 + vk.ck.batch_g1[0].into_group() * aggregation_fr[0];
+    let _aggregation = circuit.aggregation.unwrap();
+    let _aggregation = vk.ck.batch_g1[0].into_group() * _aggregation[0]
+        + vk.ck.batch_g1[1].into_group() * _aggregation[1];
+    assert_eq!(
+        aggregation.into_affine(),
+        _aggregation.into_affine(),
+        "Invalid Aggregation"
+    );
+    verify.d = (aggregation + verify.d.into_group()).into_affine();
 
     assert!(
         CCGroth16::<E>::verify(&vk, &public_inputs, &verify).unwrap(),
@@ -453,7 +487,7 @@ pub mod bn254 {
     fn batch_commitment_circuit_without_key() {
         let mut rng = R::seed_from_u64(test_rng().next_u64());
         for n in LOG_MIN..=LOG_MAX {
-            let batch_size = 1 << (n + 1);
+            let batch_size = 1 << n;
 
             let (gen, prv, vrf) =
                 process_batch_commitment_circuit::<E, R>(NUM_REPEAT, batch_size, &mut rng);
@@ -475,15 +509,19 @@ pub mod bn254 {
 
             let (pk, vk, ck) = zkst_circuit_setup::<E, R>(batch_size, &mut rng);
 
-            // update wallet commitments
+            // update scenario
             let cm_update_curr = test_commitments::<F>(batch_size, 2);
             let cm_update_delta = cm_update_curr.clone();
             let cm_update = [&cm_update_curr[..], &cm_update_delta[..]].concat();
+
+            // commit
+            let permuted_update = vec![F::zero(); batch_size];
+            let public_inputs_update = vec![F::zero(); batch_size + 1];
             let (cm_update_g1, d_update, tau_update) =
-                zkst_circuit_commit(&ck, &cm_update, &mut rng);
+                zkst_circuit_commit(&ck, &public_inputs_update, &cm_update, &mut rng);
+            drop(public_inputs_update);
 
             // prove and verify
-            let permuted_update = vec![F::zero(); batch_size];
             let circuit_update = ZKSTCircuit::new(
                 tau_update,
                 false,
@@ -500,7 +538,8 @@ pub mod bn254 {
                 &mut rng,
             );
 
-            let cm_exchange_curr = vec![vec![F::from(0u64); 2]; batch_size];
+            // exchange scenario
+            let cm_exchange_curr = vec![vec![F::zero(); 2]; batch_size];
             let cm_exchange_delta = test_commitments::<F>(batch_size, 2);
             let mut permuted_exchange = cfg_iter!(cm_exchange_delta)
                 .map(|cm| cm[0])
@@ -510,8 +549,12 @@ pub mod bn254 {
                 .map(|cm| vec![-cm[0], -cm[1]])
                 .collect::<Vec<Vec<F>>>();
             let cm_exchange = [&cm_exchange_curr[..], &cm_exchange_delta[..]].concat();
+
+            // commit
+            let public_inputs_exchange = vec![vec![F::one()], permuted_exchange.clone()].concat();
             let (cm_exchange_g1, d_exchange, tau_exchange) =
-                zkst_circuit_commit(&ck, &cm_exchange, &mut rng);
+                zkst_circuit_commit(&ck, &public_inputs_exchange, &cm_exchange, &mut rng);
+            drop(public_inputs_exchange);
 
             // prove and verify
             let circuit_exchange = ZKSTCircuit::new(
@@ -529,6 +572,8 @@ pub mod bn254 {
                 &d_exchange,
                 &mut rng,
             );
+
+            println!("update: {}, exchange: {}", tau_update, tau_exchange);
 
             // print solidity form
             zkst_circuit_solidity(

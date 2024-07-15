@@ -24,3 +24,13 @@ pub fn format_time(microseconds: u128) -> String {
         format!("{} µs", microseconds)
     }
 }
+
+pub trait Transpose<T> {
+    fn transpose(&self) -> Vec<T>;
+}
+
+impl<T: Clone> Transpose<Vec<T>> for Vec<T> {
+    fn transpose(&self) -> Vec<Vec<T>> {
+        self.into_iter().map(|x| vec![x.clone()]).collect()
+    }
+}

@@ -8,8 +8,6 @@ use std::path::Path;
 
 use crate::solidity::Solidity;
 
-// use crate::utils::ToVec;
-
 /// Read Vec<u8> from file
 pub fn read_file<P: AsRef<Path>>(path: P) -> Vec<u8> {
     let mut f = File::open(&path).expect("no file found");
@@ -147,13 +145,10 @@ pub struct VerifyingKey<E: Pairing> {
     pub gamma_g2: E::G2Affine,
     /// The `delta * H`, where `H` is the generator of `E::G2`.
     pub delta_g2: E::G2Affine,
-    /// The `zeta * H`, where `H` is the generator of `E::G2`.
-    pub zeta_g2: E::G2Affine,
 
-    /// The `zeta^{-1} * (beta * a_i + alpha * b_i + c_i) * H`, where `H` is
+    /// The `gamma^{-1} * (beta * a_i + alpha * b_i + c_i) * H`, where `H` is
     /// the generator of `E::G1`
-    /// for Batched cc-SNARK [1, tau: challenge)]
-    pub zeta_abc_g1: Vec<E::G1Affine>,
+    pub gamma_abc_g1: Vec<E::G1Affine>,
 }
 
 impl<E: Pairing> Default for VerifyingKey<E> {
@@ -164,8 +159,7 @@ impl<E: Pairing> Default for VerifyingKey<E> {
             beta_g2: E::G2Affine::default(),
             gamma_g2: E::G2Affine::default(),
             delta_g2: E::G2Affine::default(),
-            zeta_g2: E::G2Affine::default(),
-            zeta_abc_g1: Vec::new(),
+            gamma_abc_g1: Vec::new(),
         }
     }
 }
@@ -187,8 +181,7 @@ impl<E: Pairing> ToString for VerifyingKey<E> {
             "beta" : format!("{:#?}", (self.beta_g2.into_group().neg()).into_affine()),
             "delta" : format!("{:#?}", (self.delta_g2.into_group().neg()).into_affine()),
             "gamma" : format!("{:#?}", (self.gamma_g2.into_group().neg()).into_affine()),
-            "zeta" : format!("{:#?}", (self.zeta_g2.into_group().neg()).into_affine()),
-            "abc" : format!("{:#?}", self.zeta_abc_g1)
+            "abc" : format!("{:#?}", self.gamma_abc_g1)
         })
         .to_string()
     }
@@ -211,10 +204,7 @@ where
             (self.gamma_g2.into_group().neg())
                 .into_affine()
                 .to_solidity(),
-            (self.zeta_g2.into_group().neg())
-                .into_affine()
-                .to_solidity(),
-            self.zeta_abc_g1.to_solidity(),
+            self.gamma_abc_g1.to_solidity(),
         ]
         .concat()
     }
@@ -232,8 +222,6 @@ pub struct PreparedVerifyingKey<E: Pairing> {
     pub gamma_g2_neg_pc: E::G2Prepared,
     /// The element `- delta * H` in `E::G2`, prepared for use in pairings.
     pub delta_g2_neg_pc: E::G2Prepared,
-    /// The element `- zeta * H` in `E::G2`, prepared for use in pairings.
-    pub zeta_g2_neg_pc: E::G2Prepared,
 }
 
 impl<E: Pairing> From<PreparedVerifyingKey<E>> for VerifyingKey<E> {
@@ -255,7 +243,6 @@ impl<E: Pairing> Default for PreparedVerifyingKey<E> {
             alpha_g1_beta_g2: E::TargetField::default(),
             gamma_g2_neg_pc: E::G2Prepared::default(),
             delta_g2_neg_pc: E::G2Prepared::default(),
-            zeta_g2_neg_pc: E::G2Prepared::default(),
         }
     }
 }

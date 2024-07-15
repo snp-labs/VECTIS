@@ -47,29 +47,35 @@ impl<C: CurveGroup> BatchCommitmentScheme for Pedersen<C> {
     }
 
     fn challenge(
+        public_inputs: &[Self::Scalar],
         commitments: &[Self::Commitment],
         proof_dependent_commitment: &Self::Base,
     ) -> Self::Challenge {
         let mut hasher = Keccak256::new();
+        let mut strings = vec![];
 
-        let mut update_axis = |v: &C::BaseField| {
+        let mut update = |s: &String| {
             let zero = BasePrimeField::<C>::zero();
-            let string = v.to_string();
-            let scalar = string.parse::<BasePrimeField<C>>().ok().unwrap_or(zero);
+            let scalar = s.parse::<BasePrimeField<C>>().ok().unwrap_or(zero);
             let bigint = scalar.into_bigint();
             let bytes = bigint.to_bytes_be();
             hasher.update(&bytes);
         };
 
-        let mut update_point = |v: &C::Affine| {
-            let zero = C::BaseField::zero();
-            let (x, y) = v.xy().unwrap_or((&zero, &zero));
-            update_axis(x);
-            update_axis(y);
-        };
+        public_inputs
+            .iter()
+            .for_each(|x| strings.push(x.to_string()));
 
-        commitments.iter().for_each(|cm| update_point(cm));
-        update_point(proof_dependent_commitment);
+        commitments.iter().for_each(|cm| {
+            strings.push(cm.x().unwrap().to_string());
+            strings.push(cm.y().unwrap().to_string());
+        });
+
+        strings.push(proof_dependent_commitment.x().unwrap().to_string());
+        strings.push(proof_dependent_commitment.y().unwrap().to_string());
+
+        strings.iter().for_each(|s| update(s));
+        drop(strings);
 
         let mut raw = vec![0u8; 32];
         raw.copy_from_slice(&hasher.finalize());
@@ -77,22 +83,29 @@ impl<C: CurveGroup> BatchCommitmentScheme for Pedersen<C> {
         C::ScalarField::from_be_bytes_mod_order(&raw)
     }
 
-    fn aggregate(commitments: &[Self::Commitment], tau: Self::Challenge) -> Self::Commitment {
+    fn aggregate(
+        commitments: &[Self::Commitment],
+        tau: Self::Challenge,
+        initial: Option<Self::Challenge>,
+    ) -> (Self::Commitment, Self::Challenge) {
         let mut powers_of_tau = vec![];
-        let mut cur = tau;
+        let mut cur = initial.unwrap_or(tau);
         for _ in 0..commitments.len() {
             powers_of_tau.push(cur.into());
             cur *= &tau;
         }
 
-        C::msm_bigint(&commitments[..], &powers_of_tau[..]).into_affine()
+        (
+            C::msm_bigint(&commitments[..], &powers_of_tau[..]).into_affine(),
+            cur, // next initial
+        )
     }
 
     fn scalar_aggregate(
         commitments: &[&[Self::Scalar]],
         tau: Self::Challenge,
         initial: Option<Self::Challenge>,
-    ) -> Vec<Self::Scalar> {
+    ) -> (Vec<Self::Scalar>, Self::Challenge) {
         // powers_of_tau = [t, ..., t^(max_degree + 1)], len = commitments.len()
         let mut powers_of_tau = vec![];
         let mut cur = initial.unwrap_or(tau);
@@ -104,13 +117,16 @@ impl<C: CurveGroup> BatchCommitmentScheme for Pedersen<C> {
         let len = commitments[0].len();
         let indicies = (0..len).collect::<Vec<usize>>();
 
-        cfg_iter!(indicies)
-            .map(|c| {
-                cfg_iter!(commitments)
-                    .zip(cfg_iter!(powers_of_tau))
-                    .map(|(cm, tau)| cm[*c] * tau)
-                    .sum()
-            })
-            .collect()
+        (
+            cfg_iter!(indicies)
+                .map(|c| {
+                    cfg_iter!(commitments)
+                        .zip(cfg_iter!(powers_of_tau))
+                        .map(|(cm, tau)| cm[*c] * tau)
+                        .sum()
+                })
+                .collect(),
+            cur, // next initial
+        )
     }
 }
