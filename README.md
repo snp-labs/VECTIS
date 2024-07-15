@@ -27,6 +27,52 @@ $$
 
 ## Batch Commitment Scheme
 
+The aggregation check ensures that each commitment was made correctly:
+
+$$
+A = T \cdot M^{\top}
+$$
+
+- $b$: denotes the total numbers of batches
+- $n = \sum_{i}{n_i}$ where $n_i$ denotes the length of messages and openings of the $i$-th batch
+- $m = \sum_{i}{m_i}$ where $m_i$ denotes the size of the $i$-th batch
+- $M_i$: $n_i \times m_i$ matrix (each row denotes the composition of a commitment)
+```math
+\begin{equation} M = \text{diag}(M_i) =
+\begin{bmatrix}
+  M_1 & 0 & \cdots & 0 \\
+  0 & M_2 & \cdots & 0 \\
+  \vdots & \vdots & \ddots & \vdots \\
+  0 & 0 & \cdots & M_b
+\end{bmatrix} \end{equation}_{n \times m}
+```
+- $A$: denotes the aggregation vector
+- Where $\tau$ is a challenge which received from the verifier:
+```math
+T = \begin{bmatrix} \tau & \tau^2 & \cdots & \tau^m \end{bmatrix}
+```
+- Committing key is a vector of $n$ group elements:
+```math
+\mathsf{ck} = \begin{bmatrix} g_1 & g_2 & \cdots & g_n \end{bmatrix}
+```
+
+The product $\mathsf{ck} \cdot M$ produces a vector $CM^{\top}$, which consists of $m$ commitments. The verifier can check $A$ by verifying $A \cdot \mathsf{ck}^{\top} = T \cdot CM^{\top}$. Additionally, if $M_i$ does not need to be hidden, it can act as public inputs.
+
+If, there is no reason to separate the committing key, the matrix $M$ can be compressed as follows (where $j$ is the index where  $m_i$  is maximized):
+
+$$
+M = \begin{bmatrix}
+  M_1 & 0 \\
+  M_2 & 0 \\
+  \vdots & \vdots \\
+  M_j \\
+  \vdots & \vdots \\
+  M_b & 0
+\end{bmatrix}_{n \times \max(m_i)}
+$$
+
+In this context, the zeros ($0$) are matrices of appropriate dimensions to match the size differences.
+
 ### Steps
 
 **Circuit**
