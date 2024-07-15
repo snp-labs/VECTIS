@@ -448,6 +448,9 @@ pub mod bn254 {
         rand::{rngs::StdRng, SeedableRng},
         test_rng,
     };
+    use dotenv::dotenv;
+    use lazy_static::lazy_static;
+    use std::{env, str::FromStr};
 
     use super::*;
 
@@ -455,15 +458,28 @@ pub mod bn254 {
     type E = ark_bn254::Bn254;
     type F = ark_bn254::Fr;
     type R = StdRng;
-    const STATISTICS: bool = true;
-    const NUM_REPEAT: usize = if STATISTICS { 1 } else { 10 };
-    const LOG_MIN: usize = 1;
-    const LOG_MAX: usize = 9;
+
+    fn env<T: FromStr>(key: &'static str) -> Result<T, T::Err> {
+        dotenv().ok();
+        let var = env::var(key).expect(format!("{} not set", key).as_str());
+        var.parse()
+    }
+
+    lazy_static! {
+        pub static ref STATISTICS: bool = env("STATISTICS").expect("Failed to parse STATISTICS");
+        pub static ref NUM_REPEAT: usize = if *STATISTICS {
+            1
+        } else {
+            env("NUM_REPEAT").expect("Failed to parse NUM_REPEAT")
+        };
+        pub static ref LOG_MIN: usize = env("LOG_MIN").expect("Failed to parse LOG_MIN");
+        pub static ref LOG_MAX: usize = env("LOG_MAX").expect("Failed to parse LOG_MAX");
+    }
 
     #[test]
     fn batch_commitment_circuit_num_constraints() {
         let mut result: Vec<usize> = vec![];
-        for n in LOG_MIN..=LOG_MAX {
+        for n in *LOG_MIN..=*LOG_MAX {
             let batch_size = 1 << n;
 
             let cs_timer = start_timer!(|| format!("Batch Size: 2^{}", n));
@@ -486,14 +502,14 @@ pub mod bn254 {
     #[test]
     fn batch_commitment_circuit_without_key() {
         let mut rng = R::seed_from_u64(test_rng().next_u64());
-        for n in LOG_MIN..=LOG_MAX {
+        for n in *LOG_MIN..=*LOG_MAX {
             let batch_size = 1 << n;
 
             let (gen, prv, vrf) =
-                process_batch_commitment_circuit::<E, R>(NUM_REPEAT, batch_size, &mut rng);
+                process_batch_commitment_circuit::<E, R>(*NUM_REPEAT, batch_size, &mut rng);
             println!(
                 "Batch Size: 2^{} Generator: {} Prover: {} Aggregation: {}",
-                n - 1,
+                n,
                 format_time(gen),
                 format_time(prv),
                 format_time(vrf)
@@ -504,7 +520,7 @@ pub mod bn254 {
     #[test]
     fn zkst_circuit_scenario() {
         let mut rng = R::seed_from_u64(test_rng().next_u64());
-        for n in LOG_MIN..=LOG_MAX {
+        for n in *LOG_MIN..=*LOG_MAX {
             let batch_size = 1 << n;
 
             let (pk, vk, ck) = zkst_circuit_setup::<E, R>(batch_size, &mut rng);
