@@ -30,7 +30,7 @@ $$
 The aggregation check ensures that each commitment was made correctly:
 
 $$
-A = T \cdot M^{\top}
+A = T \cdot M
 $$
 
 - $b$: denotes the total numbers of batches
@@ -49,14 +49,14 @@ $$
 - $A$: denotes the aggregation vector
 - Where $\tau$ is a challenge which received from the verifier:
 ```math
-T = \begin{bmatrix} \tau & \tau^2 & \cdots & \tau^m \end{bmatrix}
+T = \begin{bmatrix} \tau & \tau^2 & \cdots & \tau^n \end{bmatrix}
 ```
-- Committing key is a vector of $n$ group elements:
+- Committing key is a vector of $m$ group elements:
 ```math
-\mathsf{ck} = \begin{bmatrix} g_1 & g_2 & \cdots & g_n \end{bmatrix}
+\mathsf{ck} = \begin{bmatrix} g_1 & g_2 & \cdots & g_m \end{bmatrix}
 ```
 
-The product $\mathsf{ck} \cdot M$ produces a vector $CM^{\top}$, which consists of $m$ commitments. The verifier can check $A$ by verifying $A \cdot \mathsf{ck}^{\top} = T \cdot CM^{\top}$. Additionally, if $M_i$ does not need to be hidden, it can act as public inputs.
+The product $\mathsf{ck} \cdot M^{\top}$ produces a vector $CM$, which consists of $n$ commitments. The verifier can check $A$ by verifying $\mathsf{ck} \cdot A^{\top} = CM \cdot T^{\top}$. Additionally, if $M_i$ does not need to be hidden, it can act as public inputs.
 
 If, there is no reason to separate the committing key, the matrix $M$ can be compressed as follows (where $j$ is the index where  $m_i$  is maximized):
 
