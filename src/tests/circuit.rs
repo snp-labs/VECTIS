@@ -239,7 +239,7 @@ fn process_batch_commitment_circuit<E: Pairing, R: RngCore + CryptoRng>(
     repeat: usize,
     batch_size: usize,
     rng: &mut R,
-) -> (u128, u128, u128)
+) -> (u128, u128, u128, u128)
 where
     E::G1Affine: Solidity,
     E::G2Affine: Solidity,
@@ -247,6 +247,7 @@ where
     let mut generator = vec![];
     let mut prover = vec![];
     let mut aggregation = vec![];
+    let mut verifier = vec![];
     for _ in 0..repeat {
         let num_aggregation_variables = 2;
         let num_committed_witness_variables =
@@ -301,6 +302,7 @@ where
 
         let public_inputs = [tau];
 
+        let vry_instant = Instant::now();
         let agg_instant = Instant::now();
         // Aggregate commitments
         let (aggregation_g1, _) = Pedersen::<E::G1>::aggregate(&commitments_g1, tau, None);
@@ -313,9 +315,16 @@ where
             CCGroth16::<E>::verify(&vk, public_inputs.as_slice(), &proof).unwrap(),
             "Invalid Proof"
         );
+
+        verifier.push(vry_instant.elapsed().as_micros());
     }
 
-    (generator.average(), prover.average(), aggregation.average())
+    (
+        generator.average(),
+        prover.average(),
+        aggregation.average(),
+        verifier.average(),
+    )
 }
 
 fn zkst_circuit_setup<E: Pairing, R: RngCore + CryptoRng>(
@@ -468,9 +477,9 @@ pub mod bn254 {
     lazy_static! {
         pub static ref STATISTICS: bool = env("STATISTICS").expect("Failed to parse STATISTICS");
         pub static ref NUM_REPEAT: usize = if *STATISTICS {
-            1
-        } else {
             env("NUM_REPEAT").expect("Failed to parse NUM_REPEAT")
+        } else {
+            1
         };
         pub static ref LOG_MIN: usize = env("LOG_MIN").expect("Failed to parse LOG_MIN");
         pub static ref LOG_MAX: usize = env("LOG_MAX").expect("Failed to parse LOG_MAX");
@@ -505,13 +514,14 @@ pub mod bn254 {
         for n in *LOG_MIN..=*LOG_MAX {
             let batch_size = 1 << n;
 
-            let (gen, prv, vrf) =
+            let (gen, prv, agg, vrf) =
                 process_batch_commitment_circuit::<E, R>(*NUM_REPEAT, batch_size, &mut rng);
             println!(
-                "Batch Size: 2^{} Generator: {} Prover: {} Aggregation: {}",
+                "Batch Size: 2^{} Generator: {} Prover: {} Aggregation: {} Verifier: {}",
                 n,
                 format_time(gen),
                 format_time(prv),
+                format_time(agg),
                 format_time(vrf)
             );
         }
