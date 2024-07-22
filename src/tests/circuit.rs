@@ -13,7 +13,7 @@ use ark_std::{
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
 
-use super::utils::*;
+use super::utils::{Average, Transpose};
 
 use crate::{
     crypto::commitment::{
@@ -452,37 +452,31 @@ fn zkst_circuit_solidity<E: Pairing>(
 }
 
 pub mod bn254 {
+    use crate::tests::utils::{format_time, parse_env};
+
+    use super::*;
     use ark_relations::r1cs::{ConstraintSystem, OptimizationGoal, SynthesisMode};
     use ark_std::{
         rand::{rngs::StdRng, SeedableRng},
         test_rng,
     };
-    use dotenv::dotenv;
     use lazy_static::lazy_static;
-    use std::{env, str::FromStr};
-
-    use super::*;
 
     type C = ark_bn254::G1Projective;
     type E = ark_bn254::Bn254;
     type F = ark_bn254::Fr;
     type R = StdRng;
 
-    fn env<T: FromStr>(key: &'static str) -> Result<T, T::Err> {
-        dotenv().ok();
-        let var = env::var(key).expect(format!("{} not set", key).as_str());
-        var.parse()
-    }
-
     lazy_static! {
-        pub static ref STATISTICS: bool = env("STATISTICS").expect("Failed to parse STATISTICS");
+        pub static ref STATISTICS: bool =
+            parse_env("STATISTICS").expect("Failed to parse STATISTICS");
         pub static ref NUM_REPEAT: usize = if *STATISTICS {
-            env("NUM_REPEAT").expect("Failed to parse NUM_REPEAT")
+            parse_env("NUM_REPEAT").expect("Failed to parse NUM_REPEAT")
         } else {
             1
         };
-        pub static ref LOG_MIN: usize = env("LOG_MIN").expect("Failed to parse LOG_MIN");
-        pub static ref LOG_MAX: usize = env("LOG_MAX").expect("Failed to parse LOG_MAX");
+        pub static ref LOG_MIN: usize = parse_env("LOG_MIN").expect("Failed to parse LOG_MIN");
+        pub static ref LOG_MAX: usize = parse_env("LOG_MAX").expect("Failed to parse LOG_MAX");
     }
 
     #[test]
