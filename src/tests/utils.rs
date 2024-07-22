@@ -1,3 +1,6 @@
+use dotenv::dotenv;
+use std::{env, str::FromStr};
+
 pub trait Average<T> {
     fn average(&self) -> T;
 }
@@ -13,6 +16,16 @@ impl Average<u128> for Vec<u128> {
     }
 }
 
+pub trait Transpose<T> {
+    fn transpose(&self) -> Vec<T>;
+}
+
+impl<T: Clone> Transpose<Vec<T>> for Vec<T> {
+    fn transpose(&self) -> Vec<Vec<T>> {
+        self.into_iter().map(|x| vec![x.clone()]).collect()
+    }
+}
+
 pub fn format_time(microseconds: u128) -> String {
     if microseconds >= 1_000_000 {
         let seconds = microseconds as f64 / 1_000_000.0;
@@ -25,12 +38,8 @@ pub fn format_time(microseconds: u128) -> String {
     }
 }
 
-pub trait Transpose<T> {
-    fn transpose(&self) -> Vec<T>;
-}
-
-impl<T: Clone> Transpose<Vec<T>> for Vec<T> {
-    fn transpose(&self) -> Vec<Vec<T>> {
-        self.into_iter().map(|x| vec![x.clone()]).collect()
-    }
+pub fn parse_env<T: FromStr>(key: &'static str) -> Result<T, T::Err> {
+    dotenv().ok();
+    let var = env::var(key).expect(format!("{} not set", key).as_str());
+    var.parse()
 }

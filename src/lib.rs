@@ -1,5 +1,6 @@
 pub mod crypto;
 pub mod gro;
+pub mod linker;
 pub mod snark;
 pub mod solidity;
 
