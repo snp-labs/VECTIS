@@ -9,7 +9,13 @@ use rayon::prelude::*;
 
 use crate::{
     crypto::commitment::{pedersen::Pedersen, CommitmentScheme},
-    linker::am_com_eq::*,
+    linker::{
+        am_com_eq::{
+            data_structure::{CommittingKey, Instance, PublicParameters, Witness},
+            AmComEq,
+        },
+        comp_am_com_eq::CompAmComEq,
+    },
 };
 
 fn am_com_eq_setup<C: CurveGroup, R: RngCore + CryptoRng>(
@@ -110,5 +116,68 @@ pub mod bn254 {
             challenge
         )
         .unwrap());
+    }
+
+    #[test]
+    fn comp_am_com_eq_scenario() {
+        let mut rng = R::seed_from_u64(test_rng().next_u64());
+
+        let (pp, instance, witness) = am_com_eq_setup::<C, _>(*L, *D0, *D1, *D2, &mut rng);
+
+        // commit
+        let (random, commitment) =
+            AmComEq::<C>::create_random_commitment(&pp, &mut rng).expect("commitment failed");
+
+        // challenge
+        let challenge = F::rand(&mut rng);
+
+        // prove
+        let proof = AmComEq::<C>::create_proof_with_challenge(&pp, &witness, &random, challenge)
+            .expect("proof failed");
+        drop(witness);
+        drop(random);
+
+        // comp-am-com-eq prepare
+        let (mut pp, mut proof) = CompAmComEq::<C>::prepare_from_am_com_eq(
+            &pp,
+            &instance,
+            &commitment,
+            &proof,
+            challenge,
+        )
+        .expect("prepare failed");
+        let mut vp = pp.clone();
+        drop(commitment);
+        drop(instance);
+
+        // recursive proof
+        while proof.z.len() > 2 {
+            // challenge
+            let commitment =
+                CompAmComEq::<C>::compute_depth_commitment_from_updated_parameters(&pp, &proof)
+                    .unwrap();
+
+            // challenge
+            let challenge = F::rand(&mut rng);
+
+            // fold (prover)
+            (pp, proof) = CompAmComEq::<C>::update_pp_and_prf_with_challenge(
+                &pp,
+                &proof,
+                &commitment,
+                challenge,
+            )
+            .unwrap();
+            // drop()
+
+            // fold (verifier)
+            vp = CompAmComEq::<C>::update_with_challenge(&vp, &commitment, challenge).unwrap();
+        }
+
+        // verify
+        assert!(
+            CompAmComEq::<C>::verify_with_partial_proof(&vp, &proof).unwrap(),
+            "verification failed"
+        );
     }
 }

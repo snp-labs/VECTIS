@@ -33,7 +33,7 @@ impl<C: CurveGroup> AmComEq<C> {
         let multiple_timer = start_timer!(|| "Multiple Commitment");
 
         let d0 = pp.coeff_ck.g.len();
-        let l = pp.poly_ck.g.len() / d0;
+        let l = pp.powers_of_x.len();
 
         let d0_indicies = (0..d0).collect::<Vec<_>>();
         let l_indicies = (0..l).collect::<Vec<_>>();
