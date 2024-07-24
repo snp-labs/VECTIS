@@ -4,17 +4,22 @@ use ark_ff::PrimeField;
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
 
-use super::{AmComEq, Commitment, Instance, Proof, PublicParameters};
+use crate::crypto::protocol::transcript::TranscriptProtocol;
+
+use super::{AmComEq, Instance, Proof, PublicParameters};
 
 impl<C: CurveGroup> AmComEq<C> {
-    pub fn verify_proof_with_challenge(
+    pub fn verify_proof(
         pp: &PublicParameters<C>,
         instance: &Instance<C>,
-        commitment: &Commitment<C>,
         proof: &Proof<C>,
-        challenge: C::ScalarField,
+        transcript: &mut impl TranscriptProtocol,
     ) -> Result<bool, ()> {
         let verifier_timer = start_timer!(|| "AmComEq::Verifier");
+
+        let powers_of_x = Self::compute_powers_of_x(instance, transcript);
+
+        let challenge = Self::compute_e(&proof.commitment, transcript);
 
         let single_timer = start_timer!(|| "Single Commitment");
         let z = cfg_iter!(proof.z)
@@ -27,13 +32,13 @@ impl<C: CurveGroup> AmComEq<C> {
             C::msm_bigint(&pp.poly_ck.g, &z[..]) + C::msm_bigint(&pp.poly_ck.h, &omega[..]);
         drop(omega);
 
-        let s_expected = commitment.a + instance.c * challenge;
+        let s_expected = proof.commitment.a + instance.c * challenge;
         end_timer!(single_timer);
 
         let multiple_timer = start_timer!(|| "Multiple Commitment");
 
         let d0 = pp.coeff_ck.g.len();
-        let l = pp.powers_of_x.len();
+        let l = powers_of_x.len();
 
         let d0_indicies = (0..d0).collect::<Vec<_>>();
         let l_indicies = (0..l).collect::<Vec<_>>();
@@ -41,7 +46,7 @@ impl<C: CurveGroup> AmComEq<C> {
         let aggregated_z = cfg_iter!(d0_indicies)
             .map(|&j| {
                 cfg_iter!(l_indicies)
-                    .map(|&i| proof.z[d0 * i + j] * pp.powers_of_x[i])
+                    .map(|&i| proof.z[d0 * i + j] * powers_of_x[i])
                     .sum::<C::ScalarField>()
                     .into_bigint()
             })
@@ -57,11 +62,11 @@ impl<C: CurveGroup> AmComEq<C> {
         drop(aggregated_z);
         drop(omega_hat);
 
-        let powers_of_x = cfg_iter!(pp.powers_of_x)
+        let powers_of_x = cfg_iter!(powers_of_x)
             .map(|s| s.into_bigint())
             .collect::<Vec<_>>();
         let m_expected =
-            commitment.a_hat + C::msm_bigint(&instance.c_hat, &powers_of_x[..]) * challenge;
+            proof.commitment.a_hat + C::msm_bigint(&instance.c_hat, &powers_of_x[..]) * challenge;
 
         end_timer!(multiple_timer);
 

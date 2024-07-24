@@ -452,7 +452,7 @@ fn zkst_circuit_solidity<E: Pairing>(
 }
 
 pub mod bn254 {
-    use crate::tests::utils::{format_time, parse_env};
+    use crate::tests::{utils::format_time, LOG_MAX, LOG_MIN, NUM_REPEAT};
 
     use super::*;
     use ark_relations::r1cs::{ConstraintSystem, OptimizationGoal, SynthesisMode};
@@ -460,24 +460,11 @@ pub mod bn254 {
         rand::{rngs::StdRng, SeedableRng},
         test_rng,
     };
-    use lazy_static::lazy_static;
 
     type C = ark_bn254::G1Projective;
     type E = ark_bn254::Bn254;
     type F = ark_bn254::Fr;
     type R = StdRng;
-
-    lazy_static! {
-        pub static ref STATISTICS: bool =
-            parse_env("STATISTICS").expect("Failed to parse STATISTICS");
-        pub static ref NUM_REPEAT: usize = if *STATISTICS {
-            parse_env("NUM_REPEAT").expect("Failed to parse NUM_REPEAT")
-        } else {
-            1
-        };
-        pub static ref LOG_MIN: usize = parse_env("LOG_MIN").expect("Failed to parse LOG_MIN");
-        pub static ref LOG_MAX: usize = parse_env("LOG_MAX").expect("Failed to parse LOG_MAX");
-    }
 
     #[test]
     fn batch_commitment_circuit_num_constraints() {

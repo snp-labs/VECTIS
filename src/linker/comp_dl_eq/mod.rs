@@ -12,11 +12,11 @@ mod verifier;
 
 use crate::crypto::protocol::{sigma::SigmaProtocol, transcript::TranscriptProtocol};
 
-pub struct CompAmComEq<C: CurveGroup> {
+pub struct CompDLEq<C: CurveGroup> {
     _group: PhantomData<C>,
 }
 
-impl<C: CurveGroup> SigmaProtocol for CompAmComEq<C> {
+impl<C: CurveGroup> SigmaProtocol for CompDLEq<C> {
     type PublicParameters = PublicParameters<C>;
     type Instance = Instance<C>;
     type Witness = Witness<C>;
@@ -24,7 +24,7 @@ impl<C: CurveGroup> SigmaProtocol for CompAmComEq<C> {
     type Error = ();
 
     fn setup(pp: &Self::PublicParameters) -> Result<Self::PublicParameters, ()> {
-        Ok(pp.clone())
+        Self::prepare_public_parameters(pp)
     }
 
     fn prove<T: TranscriptProtocol, R: RngCore + CryptoRng>(
@@ -32,9 +32,9 @@ impl<C: CurveGroup> SigmaProtocol for CompAmComEq<C> {
         instance: &Self::Instance,
         witness: &Self::Witness,
         transcript: &mut T,
-        rng: &mut R,
+        _: &mut R,
     ) -> Result<Self::Proof, ()> {
-        Self::creat_proof_with_combined(pp, instance, witness, transcript, rng)
+        Self::create_proof(pp, instance, witness, transcript)
     }
 
     fn verify<T: TranscriptProtocol>(

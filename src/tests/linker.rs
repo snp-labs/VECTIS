@@ -1,14 +1,22 @@
+use std::time::Instant;
+
 use ark_ec::CurveGroup;
 use ark_std::{
     rand::{CryptoRng, RngCore},
-    One, UniformRand,
+    UniformRand,
 };
 
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
 
 use crate::{
-    crypto::commitment::{pedersen::Pedersen, CommitmentScheme},
+    crypto::{
+        commitment::{pedersen::Pedersen, CommitmentScheme},
+        protocol::{
+            sigma::SigmaProtocol,
+            transcript::{sha3::SHA3Base, TranscriptProtocol},
+        },
+    },
     linker::{
         am_com_eq::{
             data_structure::{CommittingKey, Instance, PublicParameters, Witness},
@@ -18,7 +26,9 @@ use crate::{
     },
 };
 
-fn am_com_eq_setup<C: CurveGroup, R: RngCore + CryptoRng>(
+use super::utils::Average;
+
+fn linker_setup<C: CurveGroup, R: RngCore + CryptoRng>(
     l: usize,
     d0: usize,
     d1: usize,
@@ -26,7 +36,7 @@ fn am_com_eq_setup<C: CurveGroup, R: RngCore + CryptoRng>(
     rng: &mut R,
 ) -> (PublicParameters<C>, Instance<C>, Witness<C>) {
     let ld = l * d0;
-    // let g = random_affine_points(ld, rng);
+
     let g = vec![C::Affine::rand(rng); ld];
     let h = vec![C::Affine::rand(rng); d1];
 
@@ -46,19 +56,10 @@ fn am_com_eq_setup<C: CurveGroup, R: RngCore + CryptoRng>(
         })
         .collect::<Vec<_>>();
 
-    let x = C::ScalarField::rand(rng);
-    let mut powers_of_x = vec![];
-    let mut curr = C::ScalarField::one();
-    for _ in 0..l {
-        powers_of_x.push(curr);
-        curr *= x;
-    }
-
     (
         PublicParameters {
             poly_ck: CommittingKey { g, h },
             coeff_ck: CommittingKey { g: g_hat, h: h_hat },
-            powers_of_x,
         },
         Instance {
             c: c.into_affine(),
@@ -68,8 +69,41 @@ fn am_com_eq_setup<C: CurveGroup, R: RngCore + CryptoRng>(
     )
 }
 
+fn process_linker<C: CurveGroup, R: RngCore + CryptoRng>(
+    repeat: usize,
+    l: usize,
+    d0: usize,
+    d1: usize,
+    d2: usize,
+    rng: &mut R,
+) -> (u128, u128) {
+    let mut prover = vec![];
+    let mut verifier = vec![];
+    for _ in 0..repeat {
+        let prv_instant = Instant::now();
+        let (pp, instance, witness) = linker_setup::<C, _>(l, d0, d1, d2, rng);
+        let mut transcript = SHA3Base::new(true);
+
+        // prove
+        let proof = CompAmComEq::<C>::prove(&pp, &instance, &witness, &mut transcript, rng)
+            .expect("proof failed");
+        prover.push(prv_instant.elapsed().as_micros());
+        drop(witness);
+
+        // verify
+        let vry_instant = Instant::now();
+        let mut transcript = SHA3Base::new(true);
+        assert!(CompAmComEq::<C>::verify(&pp, &instance, &proof, &mut transcript).unwrap());
+        verifier.push(vry_instant.elapsed().as_micros());
+    }
+    (prover.average(), verifier.average())
+}
+
 pub mod bn254 {
-    use crate::tests::utils::parse_env;
+    use crate::tests::{
+        utils::{format_time, parse_env},
+        LOG_MAX, LOG_MIN, NUM_REPEAT,
+    };
 
     use super::*;
     use ark_std::{
@@ -78,106 +112,45 @@ pub mod bn254 {
     };
     use lazy_static::lazy_static;
 
-    // type E = ark_bn254::Bn254;
-    type F = ark_bn254::Fr;
     type C = ark_bn254::G1Projective;
     type R = StdRng;
 
     lazy_static! {
-        pub static ref L: usize = parse_env("L").expect("Failed to parse L");
         pub static ref D0: usize = parse_env("D0").expect("Failed to parse D0");
         pub static ref D1: usize = parse_env("D1").expect("Failed to parse D1");
         pub static ref D2: usize = parse_env("D2").expect("Failed to parse D2");
     }
 
     #[test]
-    fn am_com_eq_scenario() {
+    fn simple_am_com_eq_scenario() {
         let mut rng = R::seed_from_u64(test_rng().next_u64());
 
-        let (pp, instance, witness) = am_com_eq_setup::<C, _>(*L, *D0, *D1, *D2, &mut rng);
-
-        // commit
-        let (random, commitment) =
-            AmComEq::<C>::create_random_commitment(&pp, &mut rng).expect("commitment failed");
-
-        // challenge
-        let challenge = F::rand(&mut rng);
+        let l = 1 << *LOG_MIN;
+        let (pp, instance, witness) = linker_setup::<C, _>(l, *D0, *D1, *D2, &mut rng);
 
         // prove
-        let proof = AmComEq::<C>::create_proof_with_challenge(&pp, &witness, &random, challenge)
+        let mut transcript = SHA3Base::new(false);
+        let proof = AmComEq::<C>::prove(&pp, &instance, &witness, &mut transcript, &mut rng)
             .expect("proof failed");
 
         // verify
-        assert!(AmComEq::<C>::verify_proof_with_challenge(
-            &pp,
-            &instance,
-            &commitment,
-            &proof,
-            challenge
-        )
-        .unwrap());
+        let mut transcript = SHA3Base::new(false);
+        assert!(AmComEq::<C>::verify(&pp, &instance, &proof, &mut transcript).unwrap());
     }
 
     #[test]
     fn comp_am_com_eq_scenario() {
         let mut rng = R::seed_from_u64(test_rng().next_u64());
+        for n in *LOG_MIN..=*LOG_MAX {
+            let l = 1 << n;
 
-        let (pp, instance, witness) = am_com_eq_setup::<C, _>(*L, *D0, *D1, *D2, &mut rng);
-
-        // commit
-        let (random, commitment) =
-            AmComEq::<C>::create_random_commitment(&pp, &mut rng).expect("commitment failed");
-
-        // challenge
-        let challenge = F::rand(&mut rng);
-
-        // prove
-        let proof = AmComEq::<C>::create_proof_with_challenge(&pp, &witness, &random, challenge)
-            .expect("proof failed");
-        drop(witness);
-        drop(random);
-
-        // comp-am-com-eq prepare
-        let (mut pp, mut proof) = CompAmComEq::<C>::prepare_from_am_com_eq(
-            &pp,
-            &instance,
-            &commitment,
-            &proof,
-            challenge,
-        )
-        .expect("prepare failed");
-        let mut vp = pp.clone();
-        drop(commitment);
-        drop(instance);
-
-        // recursive proof
-        while proof.z.len() > 2 {
-            // challenge
-            let commitment =
-                CompAmComEq::<C>::compute_depth_commitment_from_updated_parameters(&pp, &proof)
-                    .unwrap();
-
-            // challenge
-            let challenge = F::rand(&mut rng);
-
-            // fold (prover)
-            (pp, proof) = CompAmComEq::<C>::update_pp_and_prf_with_challenge(
-                &pp,
-                &proof,
-                &commitment,
-                challenge,
-            )
-            .unwrap();
-            // drop()
-
-            // fold (verifier)
-            vp = CompAmComEq::<C>::update_with_challenge(&vp, &commitment, challenge).unwrap();
+            let (prv, vrf) = process_linker::<C, R>(*NUM_REPEAT, l, *D0, *D1, *D2, &mut rng);
+            println!(
+                "Batch Size: 2^{} Prover: {} Verifier: {}",
+                n,
+                format_time(prv),
+                format_time(vrf)
+            );
         }
-
-        // verify
-        assert!(
-            CompAmComEq::<C>::verify_with_partial_proof(&vp, &proof).unwrap(),
-            "verification failed"
-        );
     }
 }

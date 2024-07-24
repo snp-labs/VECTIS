@@ -1,65 +1,48 @@
 use ark_ec::CurveGroup;
-use ark_ff::PrimeField;
+use ark_std::rand::{CryptoRng, RngCore};
 
-#[cfg(feature = "parallel")]
-use rayon::prelude::*;
+use crate::{
+    crypto::protocol::transcript::TranscriptProtocol,
+    linker::{am_com_eq::AmComEq, comp_dl_eq::CompDLEq},
+};
 
 use super::{data_structure::*, CompAmComEq};
 
 impl<C: CurveGroup> CompAmComEq<C> {
-    pub fn compute_depth_commitment_from_updated_parameters(
+    pub fn creat_proof_with_combined<R: RngCore + CryptoRng>(
         pp: &PublicParameters<C>,
-        proof: &PartialProof<C>,
-    ) -> Result<DepthCommitment<C>, ()> {
-        if proof.z.len() != pp.g.len() || proof.z.len() != pp.g_hat.len() {
-            return Err(());
-        }
-        let commit_timer = start_timer!(|| "CompAmComEq::Depth Commit");
-        let mid = proof.z.len() / 2;
+        instance: &Instance<C>,
+        witness: &Witness<C>,
+        transcript: &mut impl TranscriptProtocol,
+        rng: &mut R,
+    ) -> Result<Proof<C>, ()> {
+        let prover_timer = start_timer!(|| "CompAmComEq::Prover");
 
-        let z_bigint = cfg_iter!(proof.z)
-            .map(|z| z.into_bigint())
-            .collect::<Vec<_>>();
+        let powers_of_x = AmComEq::compute_powers_of_x(instance, transcript);
+        let (randomness, commitment) = AmComEq::create_random_commitment(pp, &powers_of_x, rng)?;
+        let challenge = AmComEq::compute_e(&commitment, transcript);
+        let ace_proof = AmComEq::create_proof_with_assignment(
+            pp,
+            witness,
+            &randomness,
+            &commitment,
+            &powers_of_x,
+            challenge,
+        )?;
 
-        let lr_timer = start_timer!(|| "Compute LR");
-        let left = C::msm_bigint(&pp.g[mid..], &z_bigint[..mid]);
-        let right = C::msm_bigint(&pp.g[..mid], &z_bigint[mid..]);
+        let (pp, instance, witness) =
+            Self::prepare_for_comp_dl_eq(pp, instance, &ace_proof, &powers_of_x, challenge)?;
+        let cde_proof = CompDLEq::create_proof(&pp, &instance, &witness, transcript)?;
 
-        end_timer!(lr_timer);
-
-        let lr_hat_timer = start_timer!(|| "Compute LR Hat");
-        let left_hat = C::msm_bigint(&pp.g_hat[mid..], &z_bigint[..mid]);
-        let right_hat = C::msm_bigint(&pp.g_hat[..mid], &z_bigint[mid..]);
-
-        end_timer!(lr_hat_timer);
-        end_timer!(commit_timer);
-
-        Ok(DepthCommitment {
-            left: left.into_affine(),
-            right: right.into_affine(),
-            left_hat: left_hat.into_affine(),
-            right_hat: right_hat.into_affine(),
+        end_timer!(prover_timer);
+        Ok(Proof {
+            commitments: cde_proof.commitments,
+            ace: ACEProof {
+                commitment,
+                z: cde_proof.z,
+                omega: ace_proof.omega,
+                omega_hat: ace_proof.omega_hat,
+            },
         })
-    }
-
-    /// Update the public parameters and the proof with the challenge.
-    /// Prover also needs to update the proof with the challenge.
-    pub fn update_pp_and_prf_with_challenge(
-        pp: &PublicParameters<C>,
-        proof: &PartialProof<C>,
-        commitment: &DepthCommitment<C>,
-        challenge: C::ScalarField,
-    ) -> Result<(PublicParameters<C>, PartialProof<C>), ()> {
-        let pp = Self::update_with_challenge(pp, commitment, challenge)?;
-
-        let proof_timer = start_timer!(|| "Update proof");
-        let mid = proof.z.len() / 2;
-        let z = cfg_iter!(proof.z[..mid])
-            .zip(&proof.z[mid..])
-            .map(|(l, r)| *l + challenge * r)
-            .collect::<Vec<_>>();
-        end_timer!(proof_timer);
-
-        Ok((pp, PartialProof { z }))
     }
 }
