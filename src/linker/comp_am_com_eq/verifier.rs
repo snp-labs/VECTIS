@@ -1,17 +1,38 @@
 use ark_ec::CurveGroup;
 
-use super::{CompAmComEq, PartialProof, PublicParameters};
+use crate::{
+    crypto::protocol::transcript::TranscriptProtocol,
+    linker::{am_com_eq::AmComEq, comp_dl_eq::CompDLEq},
+};
+
+use super::{CDEProof, CompAmComEq, Instance, Proof, PublicParameters};
 
 impl<C: CurveGroup> CompAmComEq<C> {
-    pub fn verify_with_partial_proof(
+    pub fn verify_proof<T: TranscriptProtocol>(
         pp: &PublicParameters<C>,
-        proof: &PartialProof<C>,
+        instance: &Instance<C>,
+        proof: &Proof<C>,
+        transcript: &mut T,
     ) -> Result<bool, ()> {
-        if proof.z.len() != 2 || proof.z.len() != pp.g.len() || proof.z.len() != pp.g_hat.len() {
+        if proof.ace.z.len() != 2 {
             return Err(());
         }
-        let y_real = (pp.g[0] * proof.z[0] + pp.g[1] * proof.z[1]).into_affine();
-        let y_hat_real = (pp.g_hat[0] * proof.z[0] + pp.g_hat[1] * proof.z[1]).into_affine();
-        Ok(pp.y == y_real && pp.y_hat == y_hat_real)
+
+        let verifier_timer = start_timer!(|| "CompAmComEq::Verify");
+
+        let powers_of_x = AmComEq::compute_powers_of_x(instance, transcript);
+        let challenge = AmComEq::compute_e(&proof.ace.commitment, transcript);
+
+        let (pp, instance, witness) =
+            Self::prepare_for_comp_dl_eq(pp, instance, &proof.ace, &powers_of_x, challenge)?;
+
+        let cde_proof = CDEProof {
+            commitments: proof.commitments.clone(),
+            z: witness.z.clone(),
+        };
+        let proof = CompDLEq::verify_proof(&pp, &instance, &cde_proof, transcript)?;
+
+        end_timer!(verifier_timer);
+        Ok(proof)
     }
 }
