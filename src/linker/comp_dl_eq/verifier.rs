@@ -1,8 +1,9 @@
-use ark_ec::CurveGroup;
+use ark_ec::{AffineRepr, CurveGroup};
+use ark_serialize::CanonicalSerialize;
 
 use crate::crypto::protocol::transcript::TranscriptProtocol;
 
-use super::{CompDLEq, Instance, Proof, PublicParameters};
+use super::{Commitment, CompDLEq, Instance, Proof, PublicParameters};
 
 impl<C: CurveGroup> CompDLEq<C> {
     pub fn verify_proof(
@@ -35,5 +36,27 @@ impl<C: CurveGroup> CompDLEq<C> {
         end_timer!(verifier_timer);
 
         Ok(instance.y == y_real && instance.y_hat == y_hat_real)
+    }
+
+    pub fn compute_challenge(
+        commitment: &Commitment<C>,
+        transcript: &mut impl TranscriptProtocol,
+    ) -> C::ScalarField {
+        let mut bytes = vec![];
+        let mut extend = |p: C::Affine| {
+            let (x, y) = p.xy().unwrap();
+            y.serialize_uncompressed(&mut bytes).unwrap();
+            x.serialize_uncompressed(&mut bytes).unwrap();
+        };
+        // big endian for each commitment [left, right, left_hat, right_hat]
+        // equal to reverse bytes of little endian [right_hat, left_hat, right, left]
+        extend(commitment.right_hat);
+        extend(commitment.left_hat);
+        extend(commitment.right);
+        extend(commitment.left);
+        bytes.reverse();
+
+        transcript.append(b"commitments", &bytes[..]);
+        transcript.challenge_scalar(b"challenge")
     }
 }
