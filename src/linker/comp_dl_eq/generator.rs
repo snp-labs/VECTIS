@@ -1,11 +1,8 @@
 use ark_ec::{AffineRepr, CurveGroup};
-use ark_serialize::CanonicalSerialize;
 use ark_std::Zero;
 
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
-
-use crate::crypto::protocol::transcript::TranscriptProtocol;
 
 use super::{data_structure::*, CompDLEq};
 
@@ -77,28 +74,6 @@ impl<C: CurveGroup> CompDLEq<C> {
                 y_hat: y_hat.into_affine(),
             },
         ))
-    }
-
-    pub fn compute_challenge(
-        commitment: &Commitment<C>,
-        transcript: &mut impl TranscriptProtocol,
-    ) -> C::ScalarField {
-        let mut bytes = vec![];
-        let mut extend = |p: C::Affine| {
-            let (x, y) = p.xy().unwrap();
-            y.serialize_uncompressed(&mut bytes).unwrap();
-            x.serialize_uncompressed(&mut bytes).unwrap();
-        };
-        // big endian for each commitment [left, right, left_hat, right_hat]
-        // equal to reverse bytes of little endian [right_hat, left_hat, right, left]
-        extend(commitment.right_hat);
-        extend(commitment.left_hat);
-        extend(commitment.right);
-        extend(commitment.left);
-        bytes.reverse();
-
-        transcript.append(b"commitments", &bytes[..]);
-        transcript.challenge_scalar(b"challenge")
     }
 
     fn rescale_size(l: usize) -> usize {

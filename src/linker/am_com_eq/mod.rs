@@ -9,7 +9,6 @@ use crate::crypto::protocol::{sigma::SigmaProtocol, transcript::TranscriptProtoc
 pub use self::data_structure::*;
 
 mod errors;
-mod generator;
 mod prover;
 mod verifier;
 
