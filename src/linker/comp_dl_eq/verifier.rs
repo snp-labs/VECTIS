@@ -3,6 +3,9 @@ use ark_serialize::CanonicalSerialize;
 
 use crate::crypto::protocol::transcript::TranscriptProtocol;
 
+#[cfg(feature = "parallel")]
+use rayon::prelude::*;
+
 use super::{Commitment, CompDLEq, Instance, Proof, PublicParameters};
 
 impl<C: CurveGroup> CompDLEq<C> {
@@ -42,19 +45,24 @@ impl<C: CurveGroup> CompDLEq<C> {
         commitment: &Commitment<C>,
         transcript: &mut impl TranscriptProtocol,
     ) -> C::ScalarField {
-        let mut bytes = vec![];
-        let mut extend = |p: C::Affine| {
-            let (x, y) = p.xy().unwrap();
-            y.serialize_uncompressed(&mut bytes).unwrap();
-            x.serialize_uncompressed(&mut bytes).unwrap();
-        };
-        // big endian for each commitment [left, right, left_hat, right_hat]
-        // equal to reverse bytes of little endian [right_hat, left_hat, right, left]
-        extend(commitment.right_hat);
-        extend(commitment.left_hat);
-        extend(commitment.right);
-        extend(commitment.left);
-        bytes.reverse();
+        let commitment = vec![
+            commitment.left,
+            commitment.right,
+            commitment.left_hat,
+            commitment.right_hat,
+        ];
+
+        let bytes = cfg_iter!(commitment)
+            .map(|p| {
+                let mut _bytes = vec![];
+                let (x, y) = p.xy().unwrap();
+                y.serialize_uncompressed(&mut _bytes).unwrap();
+                x.serialize_uncompressed(&mut _bytes).unwrap();
+                _bytes.reverse();
+                _bytes
+            })
+            .flatten()
+            .collect::<Vec<_>>();
 
         transcript.append(b"commitments", &bytes[..]);
         transcript.challenge_scalar(b"challenge")

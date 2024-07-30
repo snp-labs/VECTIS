@@ -1,6 +1,8 @@
 use ark_ec::CurveGroup;
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 
+use crate::solidity::Solidity;
+
 #[derive(Clone, Debug, PartialEq, CanonicalSerialize, CanonicalDeserialize)]
 pub struct PublicParameters<C: CurveGroup> {
     pub g: Vec<C::Affine>,
@@ -27,6 +29,21 @@ pub struct Commitment<C: CurveGroup> {
     pub right: C::Affine,
     pub left_hat: C::Affine,
     pub right_hat: C::Affine,
+}
+
+impl<C: CurveGroup> Solidity for Commitment<C>
+where
+    C::Affine: Solidity,
+{
+    fn to_solidity(&self) -> Vec<String> {
+        vec![
+            self.left.to_solidity(),
+            self.right.to_solidity(),
+            self.left_hat.to_solidity(),
+            self.right_hat.to_solidity(),
+        ]
+        .concat()
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, CanonicalSerialize, CanonicalDeserialize)]
