@@ -1,7 +1,7 @@
 use std::time::Instant;
 
 use ark_ec::{pairing::Pairing, AffineRepr, CurveGroup};
-use ark_r1cs_std::{alloc::AllocVar, eq::EqGadget, fields::fp::FpVar};
+use ark_r1cs_std::{alloc::AllocVar, fields::fp::FpVar};
 use ark_relations::r1cs::{ConstraintSynthesizer, ConstraintSystemRef, SynthesisError};
 use ark_std::{
     rand::{CryptoRng, RngCore},
@@ -62,11 +62,10 @@ impl<C: CurveGroup> ConstraintSynthesizer<C::ScalarField> for LinkerCircuit<C> {
             self.msg.ok_or_else(|| SynthesisError::AssignmentMissing)
         })?;
 
-        let mut mul = FpVar::Constant(C::ScalarField::one());
-        for m in msg {
-            mul *= m;
-        }
-        mul.enforce_equal(&mul)?;
+        let e_sum = msg.iter().step_by(2).sum::<FpVar<C::ScalarField>>();
+        let o_sum = msg.iter().skip(1).step_by(2).sum::<FpVar<C::ScalarField>>();
+        let _ = e_sum.clone() * o_sum.clone();
+        let _ = o_sum.clone() * e_sum.clone();
 
         Ok(())
     }
