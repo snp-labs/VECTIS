@@ -4,6 +4,7 @@ use ark_ec::{pairing::Pairing, AffineRepr, CurveGroup};
 use ark_ff::PrimeField;
 use ark_r1cs_std::{alloc::AllocVar, boolean::Boolean, eq::EqGadget, fields::fp::FpVar};
 use ark_relations::r1cs::{ConstraintSynthesizer, ConstraintSystemRef, SynthesisError};
+use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 use ark_std::{
     rand::{CryptoRng, RngCore},
     vec::Vec,
@@ -228,10 +229,39 @@ impl<C: CurveGroup> ConstraintSynthesizer<C::ScalarField> for ZKSTCircuit<C> {
 fn test_commitments<F: PrimeField>(num_commitments: usize, length: usize) -> Vec<Vec<F>> {
     let mut commitments = vec![];
     for i in 0..num_commitments {
-        let value = ((i & 1) + 1) as u64;
+        // let value = ((i & 1) + 1) as u64;
+        let value = ((i + 1) * (i + 1)) as u64;
         commitments.push(vec![F::from(value); length]);
     }
     commitments
+}
+
+#[derive(Clone, Debug, PartialEq, CanonicalSerialize, CanonicalDeserialize)]
+struct VkWithoutCk<E: Pairing> {
+    /// The `alpha * G`, where `G` is the generator of `E::G1`.
+    pub alpha_g1: E::G1Affine,
+    /// The `alpha * H`, where `H` is the generator of `E::G2`.
+    pub beta_g2: E::G2Affine,
+    /// The `gamma * H`, where `H` is the generator of `E::G2`.
+    pub gamma_g2: E::G2Affine,
+    /// The `delta * H`, where `H` is the generator of `E::G2`.
+    pub delta_g2: E::G2Affine,
+
+    /// The `gamma^{-1} * (beta * a_i + alpha * b_i + c_i) * H`, where `H` is
+    /// the generator of `E::G1`
+    pub gamma_abc_g1: Vec<E::G1Affine>,
+}
+
+impl<E: Pairing> From<VerifyingKey<E>> for VkWithoutCk<E> {
+    fn from(vk: VerifyingKey<E>) -> Self {
+        VkWithoutCk {
+            alpha_g1: vk.alpha_g1,
+            beta_g2: vk.beta_g2,
+            gamma_g2: vk.gamma_g2,
+            delta_g2: vk.delta_g2,
+            gamma_abc_g1: vk.gamma_abc_g1,
+        }
+    }
 }
 
 // Calculate the time taken to generator, prover and verifier
@@ -290,10 +320,7 @@ where
         prover.push(prv_instant.elapsed().as_micros());
 
         if repeat == 1 {
-            println!(
-                "const cm = {:?}",
-                vec![commitments_g1[0], commitments_g1[1]].to_solidity()
-            );
+            println!("const cm = {:?}", commitments_g1.to_solidity());
             println!("const proof = {:?}", proof.to_solidity());
             println!("const vk = {:?}", vk.to_solidity());
             println!("\nconst batch{} = {{ cm, proof, vk }}", batch_size);
@@ -452,7 +479,10 @@ fn zkst_circuit_solidity<E: Pairing>(
 }
 
 pub mod bn254 {
-    use crate::tests::{utils::format_time, LOG_MAX, LOG_MIN, NUM_REPEAT};
+    use crate::tests::{
+        utils::{compressed_key_size, format_time},
+        LOG_MAX, LOG_MIN, NUM_REPEAT,
+    };
 
     use super::*;
     use ark_relations::r1cs::{ConstraintSystem, OptimizationGoal, SynthesisMode};
@@ -487,6 +517,40 @@ pub mod bn254 {
         }
 
         println!("{:?}", result);
+    }
+
+    #[test]
+    fn batch_commitment_circuit_key_size() {
+        let mut rng = R::seed_from_u64(test_rng().next_u64());
+        println!("| log batch | pk | vk | vk (with ck) | ck |");
+        println!("| --- | --- | --- | --- | --- |");
+        for n in *LOG_MIN..=*LOG_MAX {
+            let batch_size = 1 << n;
+            let num_aggregation_variables = 2;
+            let num_committed_witness_variables =
+                num_aggregation_variables + batch_size * num_aggregation_variables;
+            let mock = BatchCommitmentCircuit::<C>::mock(batch_size);
+
+            let (pk, vk, _) = CCGroth16::<E>::setup(
+                mock,
+                num_aggregation_variables,
+                num_committed_witness_variables,
+                &mut rng,
+            )
+            .unwrap();
+
+            // key size
+            let vk_without_ck = VkWithoutCk::<E>::from(vk.clone());
+
+            println!(
+                "| {} | {} | {} | {} | {} |",
+                n,
+                compressed_key_size(&pk),
+                compressed_key_size(&vk),
+                compressed_key_size(&vk_without_ck),
+                compressed_key_size(&vk.ck)
+            );
+        }
     }
 
     #[test]

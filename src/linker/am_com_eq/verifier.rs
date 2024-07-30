@@ -111,7 +111,7 @@ impl<C: CurveGroup> AmComEq<C> {
         let mut powers_of_x = vec![];
         let mut curr = C::ScalarField::one();
         for _ in 0..l {
-            powers_of_x.push(x);
+            powers_of_x.push(curr);
             curr *= x;
         }
         powers_of_x

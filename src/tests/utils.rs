@@ -1,3 +1,4 @@
+use ark_serialize::CanonicalSerialize;
 use dotenv::dotenv;
 use std::{env, str::FromStr};
 
@@ -42,4 +43,10 @@ pub fn parse_env<T: FromStr>(key: &'static str) -> Result<T, T::Err> {
     dotenv().ok();
     let var = env::var(key).expect(format!("{} not set", key).as_str());
     var.parse()
+}
+
+pub fn compressed_key_size<K: CanonicalSerialize>(key: &K) -> usize {
+    let mut buffer = vec![];
+    key.serialize_compressed(&mut buffer).unwrap();
+    buffer.len()
 }
