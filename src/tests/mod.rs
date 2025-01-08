@@ -18,4 +18,6 @@ lazy_static! {
     pub static ref LOG_MIN: usize = parse_env("LOG_MIN").expect("Failed to parse LOG_MIN");
     /// Maximum log of the number batch commitments
     pub static ref LOG_MAX: usize = parse_env("LOG_MAX").expect("Failed to parse LOG_MAX");
+    /// Maximum log of the number batch commitments
+    pub static ref CP_LINK: bool = parse_env("CP_LINK").expect("Failed to parse CP_LINK");
 }

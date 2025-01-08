@@ -17,11 +17,20 @@ use rayon::prelude::*;
 use super::utils::{Average, Transpose};
 
 use crate::{
-    crypto::commitment::{
-        pedersen::{Pedersen, PedersenGadget},
-        BatchCommitmentGadget, BatchCommitmentScheme,
+    crypto::{
+        commitment::{
+            pedersen::{Pedersen, PedersenGadget},
+            BatchCommitmentGadget, BatchCommitmentScheme, CommitmentScheme,
+        },
+        protocol::{
+            sigma::SigmaProtocol,
+            transcript::{sha3::SHA3Base, TranscriptProtocol},
+        },
     },
     gro::{CCGroth16, Commitment, CommittingKey, Proof, ProvingKey, VerifyingKey},
+    linker::am_eq::{
+        AmEq, CommittingKey as LinkerCommittingKey, Instance, PublicParameters, Witness,
+    },
     snark::{CircuitSpecificSetupCCSNARK, CCSNARK},
     solidity::Solidity,
 };
@@ -354,6 +363,133 @@ where
     )
 }
 
+// Calculate the time taken to generator, prover and verifier
+fn process_batch_commitment_circuit_link<E: Pairing, R: RngCore + CryptoRng>(
+    repeat: usize,
+    batch_size: usize,
+    rng: &mut R,
+) -> (u128, u128, u128, u128)
+where
+    E::G1Affine: Solidity,
+    E::G2Affine: Solidity,
+    E::ScalarField: Solidity,
+{
+    let mut generator = vec![];
+    let mut prover = vec![];
+    let mut aggregation = vec![];
+    let mut verifier = vec![];
+    for _ in 0..repeat {
+        let num_aggregation_variables = 2;
+        let num_committed_witness_variables =
+            num_aggregation_variables + batch_size * num_aggregation_variables;
+
+        let mock = BatchCommitmentCircuit::<E::G1>::mock(batch_size);
+
+        let gen_instant = Instant::now();
+        let (pk, vk, ck) = CCGroth16::<E>::setup(
+            mock,
+            num_aggregation_variables,
+            num_committed_witness_variables,
+            rng,
+        )
+        .unwrap();
+
+        let g = vec![ck.batch_g1[0].clone()];
+        let h = vec![ck.batch_g1[1].clone()];
+        let lck = LinkerCommittingKey { g, h };
+        let pp = PublicParameters {
+            poly_ck: lck.clone(),
+            coeff_ck: lck,
+        };
+        generator.push(gen_instant.elapsed().as_micros());
+
+        // make random cm (prev, curr)
+        let commitments = test_commitments::<E::ScalarField>(batch_size, 2);
+
+        // Generage Proof Dependent Commitment
+        let committed_witness = cfg_iter!(commitments)
+            .flat_map(|cm| cfg_iter!(cm).cloned())
+            .collect::<Vec<_>>();
+        let proof_dependent_commitment =
+            CCGroth16::<E>::commit(&ck, &committed_witness[..], rng).unwrap();
+
+        // Batch Commitment Module
+        let slices = cfg_iter!(commitments).map(|cm| &cm[..]).collect::<Vec<_>>();
+        let commitments_g1 = Pedersen::<E::G1>::batch_commit(&pk.vk.ck.batch_g1, &slices[..]);
+        let tau =
+            Pedersen::<E::G1>::challenge(&[], &commitments_g1, &proof_dependent_commitment.cm);
+
+        // Make circuit
+        let circuit = BatchCommitmentCircuit::<E::G1>::new(commitments, tau);
+
+        // Linker assignments
+        let aggregated = circuit.aggregation.clone().unwrap();
+        let witness = Witness {
+            w: aggregated[..0].to_vec(),
+            alpha: aggregated[1..].to_vec(),
+        };
+        let instance = Instance {
+            c_hat: commitments_g1.clone(),
+            tau,
+        };
+
+        let prv_instant = Instant::now();
+        let mut transcript = SHA3Base::new(false);
+        let mut dlc_proof =
+            CCGroth16::<E>::prove(&pk, circuit.clone(), &proof_dependent_commitment, rng).unwrap();
+
+        let eq_proof = AmEq::<E::G1>::prove(&pp, &instance, &witness, &mut transcript, rng)
+            .expect("proof failed");
+        prover.push(prv_instant.elapsed().as_micros());
+        drop(witness);
+
+        if repeat == 1 {
+            println!("const cm = {:?}", commitments_g1.to_solidity());
+            println!("const dlc_proof = {:?}", dlc_proof.to_solidity());
+            println!("const eq_proof = {:?}", eq_proof.to_solidity());
+            println!("const vk = {:?}", vk.to_solidity());
+            println!("const pp = {:?}", pp.to_solidity());
+            println!(
+                "\nconst batch{} = {{ cm, dlc_proof, eq_proof, vk, pp }}",
+                batch_size
+            );
+            println!("\nexport default batch{}", batch_size);
+        }
+
+        let public_inputs = [tau];
+
+        let vry_instant = Instant::now();
+        let mut transcript = SHA3Base::new(false);
+
+        let agg_instant = Instant::now();
+        // Aggregate commitments
+        let (aggregation_g1, _) = Pedersen::<E::G1>::aggregate(&commitments_g1, tau, None);
+        // Update proof dependent commitment
+        dlc_proof.d = (dlc_proof.d.into_group() + aggregation_g1).into_affine();
+        aggregation.push(agg_instant.elapsed().as_micros());
+
+        // In Batch Commitment Circuit, there is no different public inputs
+        assert!(
+            CCGroth16::<E>::verify(&vk, public_inputs.as_slice(), &dlc_proof).unwrap(),
+            "Invalid Proof"
+        );
+
+        assert!(
+            AmEq::<E::G1>::verify(&pp, &instance, &eq_proof, &mut transcript).unwrap(),
+            "eclipse proof failed"
+        );
+
+        verifier.push(vry_instant.elapsed().as_micros());
+    }
+
+    (
+        generator.average(),
+        prover.average(),
+        aggregation.average(),
+        verifier.average(),
+    )
+}
+
 fn zkst_circuit_setup<E: Pairing, R: RngCore + CryptoRng>(
     batch_size: usize,
     rng: &mut R,
@@ -561,6 +697,63 @@ pub mod bn254 {
 
             let (gen, prv, agg, vrf) =
                 process_batch_commitment_circuit::<E, R>(*NUM_REPEAT, batch_size, &mut rng);
+            println!(
+                "Batch Size: 2^{} Generator: {} Prover: {} Aggregation: {} Verifier: {}",
+                n,
+                format_time(gen),
+                format_time(prv),
+                format_time(agg),
+                format_time(vrf)
+            );
+        }
+    }
+
+    #[test]
+    fn batch_commitment_circuit_commit_and_prove_key_size() {
+        let mut rng = R::seed_from_u64(test_rng().next_u64());
+        println!("| log batch | pk | vk | vk (with ck) | ck |");
+        println!("| --- | --- | --- | --- | --- |");
+        for n in *LOG_MIN..=*LOG_MAX {
+            let batch_size = 1 << n;
+            let num_aggregation_variables = 2;
+            let num_committed_witness_variables =
+                num_aggregation_variables + batch_size * num_aggregation_variables;
+            let mock = BatchCommitmentCircuit::<C>::mock(batch_size);
+
+            let (mut pk, mut vk, _) = CCGroth16::<E>::setup(
+                mock,
+                num_aggregation_variables,
+                num_committed_witness_variables,
+                &mut rng,
+            )
+            .unwrap();
+
+            let batch_key = pk.vk.ck.batch_g1[..2].to_vec();
+            pk.vk.gamma_abc_g1.extend(&batch_key);
+            vk.gamma_abc_g1.extend(&batch_key);
+
+            // key size
+            let vk_without_ck = VkWithoutCk::<E>::from(vk.clone());
+
+            println!(
+                "| {} | {} | {} | {} | {} |",
+                n,
+                compressed_key_size(&pk),
+                compressed_key_size(&vk),
+                compressed_key_size(&vk_without_ck),
+                compressed_key_size(&vk.ck)
+            );
+        }
+    }
+
+    #[test]
+    fn batch_commitment_circuit_commit_and_prove_without_key() {
+        let mut rng = R::seed_from_u64(test_rng().next_u64());
+        for n in *LOG_MIN..=*LOG_MAX {
+            let batch_size = 1 << n;
+
+            let (gen, prv, agg, vrf) =
+                process_batch_commitment_circuit_link::<E, R>(*NUM_REPEAT, batch_size, &mut rng);
             println!(
                 "Batch Size: 2^{} Generator: {} Prover: {} Aggregation: {} Verifier: {}",
                 n,
