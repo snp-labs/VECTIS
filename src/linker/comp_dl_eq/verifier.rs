@@ -1,5 +1,7 @@
 use ark_ec::{AffineRepr, CurveGroup};
+use ark_ff::PrimeField;
 use ark_serialize::CanonicalSerialize;
+use ark_std::{vec::Vec, One, Zero};
 
 use crate::crypto::protocol::transcript::TranscriptProtocol;
 
@@ -23,13 +25,14 @@ impl<C: CurveGroup> CompDLEq<C> {
         let verifier_timer = start_timer!(|| "CompDLEq::Verifier");
         let mut pp = pp.clone();
         let mut instance = instance.clone();
+        let mut challenges = vec![];
         proof.commitments.iter().for_each(|commitment| {
             let challenge = Self::compute_challenge(commitment, transcript);
+            challenges.push(challenge);
 
-            (pp, instance) =
-                Self::update_public_parameters_and_instance(&pp, &instance, commitment, challenge)
-                    .unwrap();
+            instance = Self::update_instance(&instance, commitment, challenge).unwrap();
         });
+        pp = Self::update_public_parameters_once(&pp, &challenges).unwrap();
 
         if proof.z.len() != pp.g.len() {
             return Err(());
@@ -39,6 +42,68 @@ impl<C: CurveGroup> CompDLEq<C> {
         end_timer!(verifier_timer);
 
         Ok(instance.y == y_real && instance.y_hat == y_hat_real)
+    }
+
+    /// Verifier could update the public parameters faster
+    pub fn update_public_parameters_once(
+        pp: &PublicParameters<C>,
+        challenges: &[C::ScalarField],
+    ) -> Result<PublicParameters<C>, ()> {
+        let update_timer = start_timer!(|| "CompDLEq::Update Public Parameters");
+
+        let challenges = {
+            let n = 1 << challenges.len();
+            let mut arr = cfg_into_iter!(0..n)
+                .map(|mut b| {
+                    let mut k = C::ScalarField::one();
+                    let mut i = challenges.len() - 1;
+                    while b > 0 {
+                        if (b & 1) > 0 {
+                            k *= challenges[i];
+                        }
+                        b >>= 1;
+                        i -= 1;
+                    }
+                    k.into_bigint()
+                })
+                .collect::<Vec<_>>();
+            arr.reverse();
+            arr
+        };
+
+        let g = Self::fold(&pp.g, &challenges);
+        let g_hat = Self::fold(&pp.g_hat, &challenges);
+        end_timer!(update_timer);
+
+        Ok(PublicParameters { g, g_hat })
+    }
+
+    fn fold(
+        generators: &[C::Affine],
+        factors: &[<C::ScalarField as PrimeField>::BigInt],
+    ) -> Vec<C::Affine> {
+        if (generators.len() != factors.len() << 1) {
+            println!("error");
+        }
+        assert_eq!(
+            generators.len(),
+            factors.len() << 1,
+            "Fold: length mismatch"
+        );
+        let left = cfg_iter!(generators)
+            .step_by(2)
+            .map(|l| l.clone())
+            .collect::<Vec<_>>();
+        let right = cfg_iter!(generators)
+            .skip(1)
+            .step_by(2)
+            .map(|r| r.clone())
+            .collect::<Vec<_>>();
+        let g = vec![
+            C::msm_bigint(&left, &factors[..]),
+            C::msm_bigint(&right, &factors[..]),
+        ];
+        C::normalize_batch(&g)
     }
 
     pub fn compute_challenge(

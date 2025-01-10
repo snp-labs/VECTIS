@@ -83,12 +83,8 @@ impl<C: CurveGroup> CompDLEq<C> {
 
             let challenge = Self::compute_challenge(&commitment, transcript);
 
-            (pp, instance) = Self::update_public_parameters_and_instance(
-                &pp,
-                &instance,
-                &commitment,
-                challenge,
-            )?;
+            pp = Self::update_public_parameters(&pp, challenge)?;
+            instance = Self::update_instance(&instance, &commitment, challenge)?;
             witness = Self::update_witness(&witness, challenge)?;
             commitments.push(commitment);
         }
