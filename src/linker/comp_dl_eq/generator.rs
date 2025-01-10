@@ -32,22 +32,13 @@ impl<C: CurveGroup> CompDLEq<C> {
     }
 
     /// Both the prover and verifier need to update the public parameters
-    pub fn update_public_parameters_and_instance(
+    pub fn update_public_parameters(
         pp: &PublicParameters<C>,
-        instance: &Instance<C>,
-        commitment: &Commitment<C>,
         challenge: C::ScalarField,
-    ) -> Result<(PublicParameters<C>, Instance<C>), ()> {
-        let update_timer = start_timer!(|| "CompDLEq::Update (Fold)");
+    ) -> Result<PublicParameters<C>, ()> {
+        let update_timer = start_timer!(|| "CompDLEq::Update Public Parameters");
 
         let mid = pp.g.len() / 2;
-        let sqr_challenge = challenge * challenge;
-
-        let expected_timer = start_timer!(|| "Update expected");
-        let y = commitment.left + instance.y * challenge + commitment.right * sqr_challenge;
-        let y_hat =
-            commitment.left_hat + instance.y_hat * challenge + commitment.right_hat * sqr_challenge;
-        end_timer!(expected_timer);
 
         let g_timer = start_timer!(|| "Update G");
         let g = cfg_iter!(pp.g[..mid])
@@ -64,16 +55,28 @@ impl<C: CurveGroup> CompDLEq<C> {
         end_timer!(g_hat_timer);
         end_timer!(update_timer);
 
-        Ok((
-            PublicParameters {
-                g: C::normalize_batch(&g),
-                g_hat: C::normalize_batch(&g_hat),
-            },
-            Instance {
-                y: y.into_affine(),
-                y_hat: y_hat.into_affine(),
-            },
-        ))
+        Ok(PublicParameters {
+            g: C::normalize_batch(&g),
+            g_hat: C::normalize_batch(&g_hat),
+        })
+    }
+
+    pub fn update_instance(
+        instance: &Instance<C>,
+        commitment: &Commitment<C>,
+        challenge: C::ScalarField,
+    ) -> Result<Instance<C>, ()> {
+        let update_timer = start_timer!(|| "CompDLEq::Update Instance");
+        let sqr_challenge = challenge * challenge;
+        let y = commitment.left + instance.y * challenge + commitment.right * sqr_challenge;
+        let y_hat =
+            commitment.left_hat + instance.y_hat * challenge + commitment.right_hat * sqr_challenge;
+        end_timer!(update_timer);
+
+        Ok(Instance {
+            y: y.into_affine(),
+            y_hat: y_hat.into_affine(),
+        })
     }
 
     fn rescale_size(l: usize) -> usize {
