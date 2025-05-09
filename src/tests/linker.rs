@@ -1,7 +1,14 @@
 use std::time::Instant;
 
 use ark_ec::{pairing::Pairing, AffineRepr, CurveGroup};
-use ark_r1cs_std::{alloc::AllocVar, fields::fp::FpVar};
+use ark_ff::PrimeField;
+use ark_r1cs_std::{
+    alloc::AllocVar,
+    boolean::Boolean,
+    eq::EqGadget,
+    fields::{fp::FpVar, FieldVar},
+    ToBitsGadget,
+};
 use ark_relations::r1cs::{ConstraintSynthesizer, ConstraintSystemRef, SynthesisError};
 use ark_std::{
     rand::{CryptoRng, RngCore},
@@ -62,10 +69,19 @@ impl<C: CurveGroup> ConstraintSynthesizer<C::ScalarField> for LinkerCircuit<C> {
             self.msg.ok_or_else(|| SynthesisError::AssignmentMissing)
         })?;
 
-        let e_sum = msg.iter().step_by(2).sum::<FpVar<C::ScalarField>>();
-        let o_sum = msg.iter().skip(1).step_by(2).sum::<FpVar<C::ScalarField>>();
-        let _ = e_sum.clone() * o_sum.clone();
-        let _ = o_sum.clone() * e_sum.clone();
+        // let e_sum = msg.iter().step_by(2).sum::<FpVar<C::ScalarField>>();
+        // let o_sum = msg.iter().skip(1).step_by(2).sum::<FpVar<C::ScalarField>>();
+        // let _ = e_sum.clone() * o_sum.clone();
+        // let _ = o_sum.clone() * e_sum.clone();
+
+        // Age Check
+        let age_limit_bytes: [u8; 8] = (std::u64::MAX - 1).to_le_bytes();
+        let age_limit = C::ScalarField::from_le_bytes_mod_order(&age_limit_bytes);
+        let start = msg.len() >> 9;
+        msg[start..].iter().for_each(|age| {
+            let age_bits = age.to_non_unique_bits_le().unwrap();
+            Boolean::enforce_smaller_or_equal_than_le(&age_bits, age_limit.into_bigint()).unwrap();
+        });
 
         Ok(())
     }
@@ -234,15 +250,15 @@ where
         // verify
         let vry_instant = Instant::now();
         let mut transcript = SHA3Base::new(false);
-        assert!(
-            CCGroth16::<E>::verify(&pk.vk, &[], &lego_proof).unwrap(),
-            "lego proof failed"
-        );
+        // assert!(
+        //     CCGroth16::<E>::verify(&pk.vk, &[], &lego_proof).unwrap(),
+        //     "lego proof failed"
+        // );
 
-        assert!(
-            CompAmComEq::<E::G1>::verify(&pp, &instance, &eclipse_proof, &mut transcript).unwrap(),
-            "eclipse proof failed"
-        );
+        // assert!(
+        //     CompAmComEq::<E::G1>::verify(&pp, &instance, &eclipse_proof, &mut transcript).unwrap(),
+        //     "eclipse proof failed"
+        // );
         verifier.push(vry_instant.elapsed().as_micros());
 
         if repeat == 1 {

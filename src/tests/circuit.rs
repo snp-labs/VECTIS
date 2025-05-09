@@ -2,7 +2,9 @@ use std::time::Instant;
 
 use ark_ec::{pairing::Pairing, AffineRepr, CurveGroup};
 use ark_ff::PrimeField;
-use ark_r1cs_std::{alloc::AllocVar, boolean::Boolean, eq::EqGadget, fields::fp::FpVar};
+use ark_r1cs_std::{
+    alloc::AllocVar, boolean::Boolean, eq::EqGadget, fields::fp::FpVar, ToBitsGadget,
+};
 use ark_relations::r1cs::{ConstraintSynthesizer, ConstraintSystemRef, SynthesisError};
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 use ark_std::{
@@ -20,7 +22,7 @@ use crate::{
     crypto::{
         commitment::{
             pedersen::{Pedersen, PedersenGadget},
-            BatchCommitmentGadget, BatchCommitmentScheme, CommitmentScheme,
+            BatchCommitmentGadget, BatchCommitmentScheme,
         },
         protocol::{
             sigma::SigmaProtocol,
@@ -89,11 +91,19 @@ impl<C: CurveGroup> ConstraintSynthesizer<C::ScalarField> for BatchCommitmentCir
 
         PedersenGadget::<C, FpVar<C::ScalarField>>::enforce_equal(
             aggregation,
-            commitments,
+            commitments.clone(),
             tau,
             None,
         )?;
 
+        // Age Check
+        let age_limit_bytes: [u8; 8] = (std::u64::MAX - 1).to_le_bytes();
+        let age_limit = C::ScalarField::from_le_bytes_mod_order(&age_limit_bytes);
+        let start = commitments.len() >> 9;
+        commitments[start..].iter().for_each(|cm| {
+            let age = cm[0].to_non_unique_bits_le().unwrap();
+            Boolean::enforce_smaller_or_equal_than_le(&age, age_limit.into_bigint()).unwrap();
+        });
         Ok(())
     }
 }
@@ -425,7 +435,7 @@ where
         // Linker assignments
         let aggregated = circuit.aggregation.clone().unwrap();
         let witness = Witness {
-            w: aggregated[..0].to_vec(),
+            w: aggregated[..1].to_vec(),
             alpha: aggregated[1..].to_vec(),
         };
         let instance = Instance {
