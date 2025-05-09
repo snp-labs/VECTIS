@@ -116,7 +116,6 @@ impl<C: CurveGroup> AmEq<C> {
 
         let c = c.into();
         let challenge = Self::compute_e(&c, &commitment, transcript);
-        println!("Challenge: {:?}", challenge);
 
         let proof = Self::create_proof_with_assignment(
             pp,

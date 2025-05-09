@@ -19,7 +19,6 @@ impl<C: CurveGroup> AmEq<C> {
         let verifier_timer = start_timer!(|| "AmComEq::Verifier");
 
         let challenge = Self::compute_e(&proof.c, &proof.commitment, transcript);
-        println!("Challenge: {:?}", challenge);
 
         let single_timer = start_timer!(|| "Single Commitment");
         let z = cfg_iter!(proof.z)
