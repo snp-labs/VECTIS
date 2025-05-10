@@ -1,15 +1,7 @@
-use std::{cmp::Ordering, time::Instant};
-
-use ark_crypto_primitives::sponge::poseidon::PoseidonConfig;
+use ark_crypto_primitives::Error;
 use ark_ec::{pairing::Pairing, AffineRepr, CurveGroup};
-use ark_ff::{Fp, PrimeField};
-use ark_r1cs_std::{
-    alloc::AllocVar,
-    boolean::Boolean,
-    eq::EqGadget,
-    fields::{fp::FpVar, FieldVar},
-    R1CSVar, ToBitsGadget, ToBytesGadget,
-};
+use ark_ff::PrimeField;
+use ark_r1cs_std::{alloc::AllocVar, boolean::Boolean, eq::EqGadget, fields::fp::FpVar};
 use ark_relations::r1cs::{ConstraintSynthesizer, ConstraintSystemRef, SynthesisError};
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 use ark_std::{
@@ -17,6 +9,7 @@ use ark_std::{
     vec::Vec,
     One, Zero,
 };
+use std::{cmp::Ordering, time::Instant};
 
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
@@ -116,10 +109,15 @@ struct DidCircuit<C: CurveGroup> {
     // constant
     pub age_upper_limit: Option<C::ScalarField>,
     pub age_lower_limit: Option<C::ScalarField>,
+    pub target_attr: Option<C::ScalarField>,
 }
 
 impl<C: CurveGroup> DidCircuit<C> {
-    pub fn new(commitments: Vec<Vec<C::ScalarField>>, tau: C::ScalarField) -> Self {
+    pub fn new(
+        commitments: Vec<Vec<C::ScalarField>>,
+        tau: C::ScalarField,
+        target_attr: C::ScalarField,
+    ) -> Self {
         let slices: Vec<&[C::ScalarField]> = commitments.iter().map(|cm| &cm[..]).collect();
         let (aggregation, _) = Pedersen::<C>::scalar_aggregate(&slices[..], tau, None);
 
@@ -129,16 +127,18 @@ impl<C: CurveGroup> DidCircuit<C> {
             commitments: Some(commitments),
             age_upper_limit: Some(C::ScalarField::from(u64::MAX)),
             age_lower_limit: Some(C::ScalarField::zero()),
+            target_attr: Some(target_attr),
         }
     }
 
     pub fn mock(batch_size: usize) -> Self {
         Self {
             tau: Some(C::ScalarField::zero()),
-            aggregation: Some(vec![C::ScalarField::zero(); 2]),
-            commitments: Some(vec![vec![C::ScalarField::zero(); 2]; batch_size]),
+            aggregation: Some(vec![C::ScalarField::zero(); 5]),
+            commitments: Some(vec![vec![C::ScalarField::zero(); 5]; batch_size]),
             age_upper_limit: Some(C::ScalarField::from(u64::MAX)),
             age_lower_limit: Some(C::ScalarField::zero()),
+            target_attr: Some(C::ScalarField::zero()),
         }
     }
 }
@@ -190,6 +190,25 @@ impl<C: CurveGroup> ConstraintSynthesizer<C::ScalarField> for DidCircuit<C> {
                 .unwrap();
         });
 
+        // Attribute Check
+        let target_var = FpVar::new_constant(cs.clone(), self.target_attr.unwrap())?;
+        let start = commitments.len() >> 9;
+
+        for cm_inner_vec in commitments[start..].iter() {
+            if cm_inner_vec.len() == 5 {
+                let attr1_var = &cm_inner_vec[1];
+                let attr2_var = &cm_inner_vec[2];
+                let attr3_var = &cm_inner_vec[3];
+
+                let res_attr1 = attr1_var.is_eq(&target_var)?;
+                let res_attr2 = attr2_var.is_eq(&target_var)?;
+                let res_attr3 = attr3_var.is_eq(&target_var)?;
+                Boolean::kary_or(&[res_attr1, res_attr2, res_attr3])?
+                    .enforce_equal(&Boolean::TRUE)?;
+            } else {
+                return Err(SynthesisError::Unsatisfiable);
+            }
+        }
         Ok(())
     }
 }
@@ -337,6 +356,20 @@ fn test_commitments<F: PrimeField>(num_commitments: usize, length: usize) -> Vec
         // let value = ((i & 1) + 1) as u64;
         let value = ((i + 1) * (i + 1)) as u64;
         commitments.push(vec![F::from(value); length]);
+    }
+    commitments
+}
+
+fn test_did_commitments<F: PrimeField>(num_commitments: usize, length: usize) -> Vec<Vec<F>> {
+    let mut commitments = vec![];
+    for i in 0..num_commitments {
+        let value = ((i + 1) * (i + 1)) as u64;
+        let value_var = F::from(value);
+        // inner_vec = [value_var, 0, 0, 0]
+        let mut inner_vec: Vec<F> = Vec::with_capacity(length);
+        inner_vec.push(value_var);
+        inner_vec.resize(length, F::zero());
+        commitments.push(inner_vec);
     }
     commitments
 }
@@ -601,7 +634,7 @@ where
     let mut aggregation = vec![];
     let mut verifier = vec![];
     for _ in 0..repeat {
-        let num_aggregation_variables = 2;
+        let num_aggregation_variables = 5;
         let num_committed_witness_variables =
             num_aggregation_variables + batch_size * num_aggregation_variables;
 
@@ -618,7 +651,7 @@ where
         generator.push(gen_instant.elapsed().as_micros());
 
         // make random cm (prev, curr)
-        let commitments = test_commitments::<E::ScalarField>(batch_size, 2);
+        let commitments = test_did_commitments::<E::ScalarField>(batch_size, 5);
 
         // Generate Proof Dependent Commitment
         let committed_witness = cfg_iter!(commitments)
@@ -634,20 +667,13 @@ where
             Pedersen::<E::G1>::challenge(&[], &commitments_g1, &proof_dependent_commitment.cm);
 
         // Make circuit
-        let circuit = DidCircuit::<E::G1>::new(commitments, tau);
+        let target_attr = E::ScalarField::from(0u64);
+        let circuit = DidCircuit::<E::G1>::new(commitments, tau, target_attr);
 
         let prv_instant = Instant::now();
         let mut proof =
             CCGroth16::<E>::prove(&pk, circuit.clone(), &proof_dependent_commitment, rng).unwrap();
         prover.push(prv_instant.elapsed().as_micros());
-
-        if repeat == 1 {
-            println!("const cm = {:?}", commitments_g1.to_solidity());
-            println!("const proof = {:?}", proof.to_solidity());
-            println!("const vk = {:?}", vk.to_solidity());
-            println!("\nconst batch{} = {{ cm, proof, vk }}", batch_size);
-            println!("\nexport default batch{}", batch_size);
-        }
 
         let public_inputs = [tau];
 
