@@ -118,7 +118,7 @@ impl<C: CurveGroup> DidCircuit<C> {
         tau: C::ScalarField,
         target_attr: C::ScalarField,
     ) -> Self {
-        let slices: Vec<&[C::ScalarField]> = commitments.iter().map(|cm| &cm[..]).collect();
+        let slices: Vec<&[C::ScalarField]> = cfg_iter!(commitments).map(|cm| &cm[..]).collect();
         let (aggregation, _) = Pedersen::<C>::scalar_aggregate(&slices[..], tau, None);
 
         Self {
