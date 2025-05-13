@@ -1,4 +1,4 @@
-use std::time::Instant;
+use std::{cmp::Ordering, time::Instant};
 
 use ark_ec::{pairing::Pairing, AffineRepr, CurveGroup};
 use ark_ff::PrimeField;
@@ -13,7 +13,7 @@ use ark_relations::r1cs::{ConstraintSynthesizer, ConstraintSystemRef, SynthesisE
 use ark_std::{
     rand::{CryptoRng, RngCore},
     vec::Vec,
-    One, UniformRand,
+    One, UniformRand, Zero,
 };
 
 #[cfg(feature = "parallel")]
@@ -82,6 +82,87 @@ impl<C: CurveGroup> ConstraintSynthesizer<C::ScalarField> for LinkerCircuit<C> {
             let age_bits = age.to_non_unique_bits_le().unwrap();
             Boolean::enforce_smaller_or_equal_than_le(&age_bits, age_limit.into_bigint()).unwrap();
         });
+
+        Ok(())
+    }
+}
+
+#[derive(Clone)]
+struct DidCircuit<C: CurveGroup> {
+    // committed witness
+    msg: Option<Vec<Vec<C::ScalarField>>>,
+
+    // constant
+    pub age_upper_limit: Option<C::ScalarField>,
+    pub age_lower_limit: Option<C::ScalarField>,
+    pub target_attr: Option<C::ScalarField>,
+}
+
+impl<C: CurveGroup> DidCircuit<C> {
+    pub fn new(msg: Vec<Vec<C::ScalarField>>, target_attr: C::ScalarField) -> Self {
+        Self {
+            msg: Some(msg),
+            age_upper_limit: Some(C::ScalarField::from(u64::MAX)),
+            age_lower_limit: Some(C::ScalarField::zero()),
+            target_attr: Some(target_attr),
+        }
+    }
+
+    pub fn mock(batch_size: usize) -> Self {
+        Self {
+            msg: Some(vec![vec![C::ScalarField::zero(); 4]; batch_size]),
+            age_upper_limit: Some(C::ScalarField::from(u64::MAX)),
+            age_lower_limit: Some(C::ScalarField::zero()),
+            target_attr: Some(C::ScalarField::zero()),
+        }
+    }
+}
+
+impl<C: CurveGroup> ConstraintSynthesizer<C::ScalarField> for DidCircuit<C> {
+    fn generate_constraints(
+        self,
+        cs: ConstraintSystemRef<C::ScalarField>,
+    ) -> ark_relations::r1cs::Result<()> {
+        let msg = self
+            .msg
+            .ok_or_else(|| SynthesisError::AssignmentMissing)?
+            .into_iter()
+            .map(|m| Vec::<FpVar<C::ScalarField>>::new_witness(cs.clone(), || Ok(m)))
+            .collect::<Result<Vec<_>, SynthesisError>>()?;
+
+        // Age Check
+        let age_lower_limit_var = FpVar::new_constant(cs.clone(), self.age_lower_limit.unwrap())?;
+        let start = msg.len() >> 9;
+        msg[start..].iter().for_each(|m| {
+            let age_var = &m[0];
+            age_lower_limit_var
+                .enforce_cmp(&age_var, Ordering::Less, true)
+                .unwrap();
+        });
+
+        let age_upper_limit_var = FpVar::new_constant(cs.clone(), self.age_upper_limit.unwrap())?;
+        let start = msg.len() >> 9;
+        msg[start..].iter().for_each(|m| {
+            let age_var = &m[0];
+            age_upper_limit_var
+                .enforce_cmp(&age_var, Ordering::Greater, true)
+                .unwrap();
+        });
+
+        // Attribute Check
+        let target_var = FpVar::new_constant(cs.clone(), self.target_attr.unwrap())?;
+        let start = msg.len() >> 9;
+
+        // for m_inner_vec in msg[start..].iter() {
+        //     let attr1_var = &m_inner_vec[1];
+        //     let attr2_var = &m_inner_vec[2];
+        //     let attr3_var = &m_inner_vec[3];
+
+        //     let res_attr1 = attr1_var.is_eq(&target_var)?;
+        //     let res_attr2 = attr2_var.is_eq(&target_var)?;
+        //     let res_attr3 = attr3_var.is_eq(&target_var)?;
+        //     Boolean::kary_or(&[res_attr1, res_attr2, res_attr3])?.enforce_equal(&Boolean::TRUE)?;
+        // }
 
         Ok(())
     }
@@ -218,6 +299,66 @@ fn cp_link_setup<E: Pairing, R: RngCore + CryptoRng>(
     )
 }
 
+fn did_cp_link_setup<E: Pairing, R: RngCore + CryptoRng>(
+    l: usize,
+    rng: &mut R,
+) -> (
+    PublicParameters<E::G1>,
+    Instance<E::G1>,
+    Witness<E::G1>,
+    ProvingKey<E>,
+    Commitment<E>,
+) {
+    let (d0, d2) = (4, 1);
+    let g_hat = (0..d0).map(|_| E::G1Affine::rand(rng)).collect::<Vec<_>>();
+    let h_hat = (0..d2).map(|_| E::G1Affine::rand(rng)).collect::<Vec<_>>();
+
+    let w = (0..l)
+        .map(|_| {
+            (0..d0)
+                .map(|_| E::ScalarField::rand(rng))
+                .collect::<Vec<_>>()
+        })
+        .collect::<Vec<_>>();
+    let beta = (0..l)
+        .map(|_| {
+            (0..d2)
+                .map(|_| E::ScalarField::rand(rng))
+                .collect::<Vec<_>>()
+        })
+        .collect::<Vec<_>>();
+
+    let mock = DidCircuit::<E::G1>::mock(l);
+    let (pk, _, ck) = CCGroth16::<E>::setup(mock, 0, l, rng).unwrap();
+
+    let w_flat = cfg_iter!(w).map(|w_i| w_i[0].clone()).collect::<Vec<_>>();
+    let c = CCGroth16::<E>::commit(&ck, &w_flat, rng).unwrap();
+    let alpha = vec![c.opening];
+    let c_hat = cfg_iter!(w)
+        .zip(&beta)
+        .map(|(w_i, beta_i)| {
+            Pedersen::<E::G1>::commit(&g_hat, w_i) + Pedersen::<E::G1>::commit(&h_hat, beta_i)
+        })
+        .collect::<Vec<_>>();
+
+    (
+        PublicParameters {
+            poly_ck: CommittingKey {
+                g: ck.proof_dependent_g1.clone(),
+                h: vec![ck.gamma_eta_g1.clone()],
+            },
+            coeff_ck: CommittingKey { g: g_hat, h: h_hat },
+        },
+        Instance {
+            c: c.cm,
+            c_hat: E::G1::normalize_batch(&c_hat),
+        },
+        Witness { w, alpha, beta },
+        pk,
+        c,
+    )
+}
+
 fn cp_link_compressed_sigma<E: Pairing, R: RngCore + CryptoRng>(
     repeat: usize,
     l: usize,
@@ -277,6 +418,53 @@ where
             );
             println!("export default batch{}", l);
         }
+    }
+    (prover.average(), verifier.average())
+}
+
+fn did_cp_link_compressed_sigma<E: Pairing, R: RngCore + CryptoRng>(
+    repeat: usize,
+    l: usize,
+    rng: &mut R,
+) -> (u128, u128)
+where
+    E::G1Affine: Solidity,
+    E::G2Affine: Solidity,
+    <E::G1Affine as AffineRepr>::ScalarField: Solidity,
+{
+    let mut prover = vec![];
+    let mut verifier = vec![];
+    for _ in 0..repeat {
+        let (pp, instance, witness, pk, commitment) = did_cp_link_setup::<E, _>(l, rng);
+
+        let target_attr = E::ScalarField::from(0u64);
+        let circuit = DidCircuit::<E::G1>::new(witness.w.clone(), target_attr);
+
+        // prove
+        let prv_instant = Instant::now();
+        let mut transcript = SHA3Base::new(false);
+        let lego_proof =
+            CCGroth16::<E>::prove(&pk, circuit.clone(), &commitment, rng).expect("proof failed");
+
+        let eclipse_proof =
+            CompAmComEq::<E::G1>::prove(&pp, &instance, &witness, &mut transcript, rng)
+                .expect("proof failed");
+        prover.push(prv_instant.elapsed().as_micros());
+        drop(witness);
+
+        // verify
+        let vry_instant = Instant::now();
+        let mut transcript = SHA3Base::new(false);
+        // assert!(
+        //     CCGroth16::<E>::verify(&pk.vk, &[], &lego_proof).unwrap(),
+        //     "lego proof failed"
+        // );
+
+        // assert!(
+        //     CompAmComEq::<E::G1>::verify(&pp, &instance, &eclipse_proof, &mut transcript).unwrap(),
+        //     "eclipse proof failed"
+        // );
+        verifier.push(vry_instant.elapsed().as_micros());
     }
     (prover.average(), verifier.average())
 }
@@ -344,6 +532,22 @@ pub mod bn254 {
             let l = 1 << n;
 
             let (prv, vrf) = cp_link_compressed_sigma::<E, R>(*NUM_REPEAT, l, &mut rng);
+            println!(
+                "Batch Size: 2^{} Prover: {} Verifier: {}",
+                n,
+                format_time(prv),
+                format_time(vrf)
+            );
+        }
+    }
+
+    #[test]
+    fn did_cp_link_scenario() {
+        let mut rng = R::seed_from_u64(test_rng().next_u64());
+        for n in *LOG_MIN..=*LOG_MAX {
+            let l = 1 << n;
+
+            let (prv, vrf) = did_cp_link_compressed_sigma::<E, R>(*NUM_REPEAT, l, &mut rng);
             println!(
                 "Batch Size: 2^{} Prover: {} Verifier: {}",
                 n,
