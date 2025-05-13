@@ -77,7 +77,7 @@ impl<C: CurveGroup> ConstraintSynthesizer<C::ScalarField> for LinkerCircuit<C> {
         // Age Check
         let age_limit_bytes: [u8; 8] = (std::u64::MAX - 1).to_le_bytes();
         let age_limit = C::ScalarField::from_le_bytes_mod_order(&age_limit_bytes);
-        let start = msg.len() >> 9;
+        let start = 0;
         msg[start..].iter().for_each(|age| {
             let age_bits = age.to_non_unique_bits_le().unwrap();
             Boolean::enforce_smaller_or_equal_than_le(&age_bits, age_limit.into_bigint()).unwrap();
@@ -110,7 +110,7 @@ impl<C: CurveGroup> DidCircuit<C> {
 
     pub fn mock(batch_size: usize) -> Self {
         Self {
-            msg: Some(vec![vec![C::ScalarField::zero(); 4]; batch_size]),
+            msg: Some(vec![vec![C::ScalarField::zero(); 3]; batch_size]),
             age_upper_limit: Some(C::ScalarField::from(u64::MAX)),
             age_lower_limit: Some(C::ScalarField::zero()),
             target_attr: Some(C::ScalarField::zero()),
@@ -132,7 +132,7 @@ impl<C: CurveGroup> ConstraintSynthesizer<C::ScalarField> for DidCircuit<C> {
 
         // Age Check
         let age_lower_limit_var = FpVar::new_constant(cs.clone(), self.age_lower_limit.unwrap())?;
-        let start = msg.len() >> 9;
+        let start = 0;
         msg[start..].iter().for_each(|m| {
             let age_var = &m[0];
             age_lower_limit_var
@@ -141,7 +141,7 @@ impl<C: CurveGroup> ConstraintSynthesizer<C::ScalarField> for DidCircuit<C> {
         });
 
         let age_upper_limit_var = FpVar::new_constant(cs.clone(), self.age_upper_limit.unwrap())?;
-        let start = msg.len() >> 9;
+        let start = 0;
         msg[start..].iter().for_each(|m| {
             let age_var = &m[0];
             age_upper_limit_var
@@ -151,18 +151,16 @@ impl<C: CurveGroup> ConstraintSynthesizer<C::ScalarField> for DidCircuit<C> {
 
         // Attribute Check
         let target_var = FpVar::new_constant(cs.clone(), self.target_attr.unwrap())?;
-        let start = msg.len() >> 9;
+        let start = 0;
 
-        // for m_inner_vec in msg[start..].iter() {
-        //     let attr1_var = &m_inner_vec[1];
-        //     let attr2_var = &m_inner_vec[2];
-        //     let attr3_var = &m_inner_vec[3];
+        for m_inner_vec in msg[start..].iter() {
+            let attr1_var = &m_inner_vec[0];
+            let attr2_var = &m_inner_vec[1];
 
-        //     let res_attr1 = attr1_var.is_eq(&target_var)?;
-        //     let res_attr2 = attr2_var.is_eq(&target_var)?;
-        //     let res_attr3 = attr3_var.is_eq(&target_var)?;
-        //     Boolean::kary_or(&[res_attr1, res_attr2, res_attr3])?.enforce_equal(&Boolean::TRUE)?;
-        // }
+            let res_attr1 = attr1_var.is_eq(&target_var)?;
+            let res_attr2 = attr2_var.is_eq(&target_var)?;
+            Boolean::kary_or(&[res_attr1, res_attr2])?.enforce_equal(&Boolean::TRUE)?;
+        }
 
         Ok(())
     }
@@ -329,7 +327,7 @@ fn did_cp_link_setup<E: Pairing, R: RngCore + CryptoRng>(
         .collect::<Vec<_>>();
 
     let mock = DidCircuit::<E::G1>::mock(l);
-    let (pk, _, ck) = CCGroth16::<E>::setup(mock, 0, l, rng).unwrap();
+    let (pk, _, ck) = CCGroth16::<E>::setup(mock, 0, l * d0, rng).unwrap();
 
     let w_flat = cfg_iter!(w).map(|w_i| w_i[0].clone()).collect::<Vec<_>>();
     let c = CCGroth16::<E>::commit(&ck, &w_flat, rng).unwrap();

@@ -134,8 +134,8 @@ impl<C: CurveGroup> DidCircuit<C> {
     pub fn mock(batch_size: usize) -> Self {
         Self {
             tau: Some(C::ScalarField::zero()),
-            aggregation: Some(vec![C::ScalarField::zero(); 5]),
-            commitments: Some(vec![vec![C::ScalarField::zero(); 5]; batch_size]),
+            aggregation: Some(vec![C::ScalarField::zero(); 4]),
+            commitments: Some(vec![vec![C::ScalarField::zero(); 4]; batch_size]),
             age_upper_limit: Some(C::ScalarField::from(u64::MAX)),
             age_lower_limit: Some(C::ScalarField::zero()),
             target_attr: Some(C::ScalarField::zero()),
@@ -173,7 +173,7 @@ impl<C: CurveGroup> ConstraintSynthesizer<C::ScalarField> for DidCircuit<C> {
 
         // Age Check
         let age_lower_limit_var = FpVar::new_constant(cs.clone(), self.age_lower_limit.unwrap())?;
-        let start = commitments.len() >> 9;
+        let start = 0;
         commitments[start..].iter().for_each(|cm| {
             let age_var = &cm[0];
             age_lower_limit_var
@@ -182,7 +182,7 @@ impl<C: CurveGroup> ConstraintSynthesizer<C::ScalarField> for DidCircuit<C> {
         });
 
         let age_upper_limit_var = FpVar::new_constant(cs.clone(), self.age_upper_limit.unwrap())?;
-        let start = commitments.len() >> 9;
+        let start = 0;
         commitments[start..].iter().for_each(|cm| {
             let age_var = &cm[0];
             age_upper_limit_var
@@ -192,19 +192,17 @@ impl<C: CurveGroup> ConstraintSynthesizer<C::ScalarField> for DidCircuit<C> {
 
         // Attribute Check
         let target_var = FpVar::new_constant(cs.clone(), self.target_attr.unwrap())?;
-        let start = commitments.len() >> 9;
+        let start = 0;
 
         for cm_inner_vec in commitments[start..].iter() {
-            if cm_inner_vec.len() == 5 {
-                let attr1_var = &cm_inner_vec[1];
-                let attr2_var = &cm_inner_vec[2];
-                let attr3_var = &cm_inner_vec[3];
+            if cm_inner_vec.len() == 4 {
+                let attr1_var = &cm_inner_vec[0];
+                let attr2_var = &cm_inner_vec[1];
 
                 let res_attr1 = attr1_var.is_eq(&target_var)?;
                 let res_attr2 = attr2_var.is_eq(&target_var)?;
-                let res_attr3 = attr3_var.is_eq(&target_var)?;
-                Boolean::kary_or(&[res_attr1, res_attr2, res_attr3])?
-                    .enforce_equal(&Boolean::TRUE)?;
+
+                Boolean::kary_or(&[res_attr1, res_attr2])?.enforce_equal(&Boolean::TRUE)?;
             } else {
                 return Err(SynthesisError::Unsatisfiable);
             }
@@ -634,7 +632,7 @@ where
     let mut aggregation = vec![];
     let mut verifier = vec![];
     for _ in 0..repeat {
-        let num_aggregation_variables = 5;
+        let num_aggregation_variables = 4;
         let num_committed_witness_variables =
             num_aggregation_variables + batch_size * num_aggregation_variables;
 
@@ -651,7 +649,7 @@ where
         generator.push(gen_instant.elapsed().as_micros());
 
         // make random cm (prev, curr)
-        let commitments = test_did_commitments::<E::ScalarField>(batch_size, 5);
+        let commitments = test_did_commitments::<E::ScalarField>(batch_size, 4);
 
         // Generate Proof Dependent Commitment
         let committed_witness = cfg_iter!(commitments)
