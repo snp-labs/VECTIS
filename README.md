@@ -1,6 +1,8 @@
-# Batch ccSNARK
+# VECTIS
 
-This is implementation of the batch ccSNARK protocol
+- **TODO**: Refactor batch ccSNARK into VECTIS
+
+This is implementation of the VECTIS protocol
 
 ## Directory Structure
 
